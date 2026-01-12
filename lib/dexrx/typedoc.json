@@ -1,0 +1,48 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "./src/index.ts"
+  ],
+  "out": "./docs/api",
+  "theme": "default",
+  "readme": "none",
+  "name": "DexRx API Documentation",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "categorizeByGroup": true,
+  "categoryOrder": [
+    "Core",
+    "Plugin Development",
+    "Providers",
+    "Types",
+    "Execution",
+    "Logging",
+    "Caching",
+    "*"
+  ],
+  "kindSortOrder": [
+    "Project",
+    "Module",
+    "Namespace",
+    "Enum",
+    "Class",
+    "Interface",
+    "TypeAlias",
+    "Function",
+    "Variable"
+  ],
+  "searchInComments": true,
+  "githubPages": false,
+  "gitRevision": "main",
+  "hideGenerator": false,
+  "entryPointStrategy": "expand",
+  "exclude": [
+    "**/tests/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ],
+  "tsconfig": "tsconfig.json"
+}

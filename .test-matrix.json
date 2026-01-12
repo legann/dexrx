@@ -1,0 +1,24 @@
+{
+  "description": "Test matrix configuration for DexRx - single source of truth for local and CI testing",
+  "node": {
+    "versions": [20, 22],
+    "current": 20,
+    "comment": "Node.js versions to test against. Minimum Node.js 20 due to dependencies (react-router-dom@7+ requires >=20.0.0)"
+  },
+  "rxjs": {
+    "versions": ["7.8.0", "^7.8.0"],
+    "minimum": "7.8.0",
+    "current": "7.8.0",
+    "latest": "^7.8.0",
+    "comment": "RxJS versions to test against. ^7.8.0 = latest 7.x"
+  },
+  "peerDependencies": {
+    "rxjs": ">=7.8.0 <7.9.0",
+    "comment": "peerDependencies range for package.json"
+  },
+  "quickMode": {
+    "node": "current",
+    "rxjs": "all",
+    "comment": "Quick mode uses current Node.js with all RxJS versions"
+  }
+}

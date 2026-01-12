@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "lib": ["ES2020"],
+    "declaration": false,
+    "strict": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "composite": false,
+    "incremental": false,
+    "baseUrl": ".",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitAny": false,
+    "types": ["jest", "node"],
+    "paths": {
+      "dexrx": ["./lib/dexrx/src/index.ts"],
+      "dexrx/*": ["./lib/dexrx/src/*"],
+      "@core/*": ["./lib/dexrx/src/core/*"],
+      "@plugins/*": ["./lib/dexrx/src/plugins/*"],
+      "@tests/*": ["./tests/utils/*"]
+    }
+  },
+  "include": ["tests/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

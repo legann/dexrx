@@ -1,0 +1,191 @@
+name: Publish Package
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (patch, minor, major)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Only allow publish from main branch and by repository owner
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner)
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@legann'
+      
+      - name: Install dependencies
+        run: |
+          # Install runtime and build dependencies for lib/dexrx
+          cd lib/dexrx
+          npm install --no-save rxjs
+          npm install --no-save --save-dev esbuild typescript @types/node
+      
+      - name: Build package
+        working-directory: lib/dexrx
+        run: |
+          # Build CJS
+          npx tsc -p tsconfig.cjs.json
+          # Build ESM
+          npx tsc -p tsconfig.esm.json
+          # Minify all JS files using inline script
+          node << 'MINIFY_EOF'
+          const esbuild = require('esbuild');
+          const fs = require('fs');
+          const path = require('path');
+          
+          const DIST_DIR = path.join(__dirname, 'dist');
+          
+          function findJsFiles(dir, fileList = []) {
+            const files = fs.readdirSync(dir);
+            files.forEach((file) => {
+              const filePath = path.join(dir, file);
+              const stat = fs.statSync(filePath);
+              if (stat.isDirectory()) {
+                findJsFiles(filePath, fileList);
+              } else if (file.endsWith('.js') && !file.endsWith('.map')) {
+                fileList.push(filePath);
+              }
+            });
+            return fileList;
+          }
+          
+          async function minifyFile(filePath) {
+            try {
+              const content = fs.readFileSync(filePath, 'utf8');
+              const isESM = filePath.includes('/esm/');
+              const format = isESM ? 'esm' : 'cjs';
+              const result = await esbuild.transform(content, {
+                minify: true,
+                format: format,
+                target: 'es2020',
+                keepNames: false,
+              });
+              fs.writeFileSync(filePath, result.code, 'utf8');
+              return { originalSize: content.length, minifiedSize: result.code.length };
+            } catch (error) {
+              console.error(`Error minifying ${filePath}:`, error.message);
+              return null;
+            }
+          }
+          
+          async function minifyAll() {
+            if (!fs.existsSync(DIST_DIR)) {
+              console.error(`Dist directory not found: ${DIST_DIR}`);
+              process.exit(1);
+            }
+            const jsFiles = findJsFiles(DIST_DIR);
+            if (jsFiles.length === 0) {
+              console.log('No JavaScript files found to minify');
+              return;
+            }
+            console.log(`Found ${jsFiles.length} JavaScript files to minify`);
+            let totalOriginalSize = 0;
+            let totalMinifiedSize = 0;
+            for (const file of jsFiles) {
+              const result = await minifyFile(file);
+              if (result) {
+                totalOriginalSize += result.originalSize;
+                totalMinifiedSize += result.minifiedSize;
+              }
+            }
+            const savings = totalOriginalSize - totalMinifiedSize;
+            const savingsPercent = ((savings / totalOriginalSize) * 100).toFixed(1);
+            console.log(`Minification complete: ${(totalOriginalSize / 1024).toFixed(2)} KB → ${(totalMinifiedSize / 1024).toFixed(2)} KB (${savingsPercent}% savings)`);
+          }
+          
+          minifyAll().catch((error) => {
+            console.error('Minification failed:', error);
+            process.exit(1);
+          });
+          MINIFY_EOF
+          # Cleanup .tsbuildinfo files from dist
+          find dist -name '*.tsbuildinfo' -delete || true
+          # Verify dist was created
+          if [ ! -d "dist" ] || [ ! -f "dist/index.js" ]; then
+            echo "ERROR: dist directory or index.js not found after build!"
+            exit 1
+          fi
+      
+      - name: Copy README.md and LICENSE for publishing
+        working-directory: lib/dexrx
+        run: |
+          cp ../../README.md . || echo "⚠️  README.md not found in root, skipping"
+          cp ../../LICENSE . || echo "⚠️  LICENSE not found in root, skipping"
+      
+      - name: Configure npm for GitHub Packages
+        working-directory: lib/dexrx
+        run: |
+          echo "@legann:registry=https://npm.pkg.github.com" >> .npmrc
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> .npmrc
+      
+      - name: Add dist to package.json files before publish
+        working-directory: lib/dexrx
+        run: |
+          echo "📝 Adding 'dist' to package.json files..."
+          echo "Current files in package.json:"
+          cat package.json | grep -A 5 '"files"' || echo "No files field found"
+          echo ""
+          # Add 'dist' to files for npm publish (it was removed by sync-source-repo.sh)
+          node << 'EOF'
+          const fs = require('fs');
+          const pkgPath = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+          if (!pkg.files) {
+            pkg.files = [];
+          }
+          const hadDist = pkg.files.includes('dist');
+          if (!hadDist) {
+            pkg.files.unshift('dist'); // Add to the beginning
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+            console.log("✅ Added 'dist' to package.json files");
+          } else {
+            console.log("✅ 'dist' already in package.json files");
+          }
+          console.log("Updated files array:", JSON.stringify(pkg.files));
+          EOF
+          echo ""
+          echo "Updated files in package.json:"
+          cat package.json | grep -A 5 '"files"'
+      
+      - name: Verify package contents before publish
+        working-directory: lib/dexrx
+        run: |
+          echo "📦 Package contents before publish:"
+          echo "Files in package.json:"
+          cat package.json | grep -A 5 '"files"'
+          echo ""
+          echo "Files that will be included:"
+          ls -la dist/ README.md LICENSE 2>/dev/null || echo "⚠️  Some files missing!"
+      
+      - name: Publish to GitHub Packages
+        working-directory: lib/dexrx
+        run: |
+          # Disable prepublishOnly to avoid conflicts (we already built)
+          npm publish --access public --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

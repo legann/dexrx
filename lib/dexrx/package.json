@@ -1,0 +1,79 @@
+{
+  "name": "@legann/dexrx",
+  "version": "1.0.0",
+  "description": "DexRx - Reactive Graph Engine for JavaScript/TypeScript",
+  "main": "./dist/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/esm/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./operators": {
+      "types": "./dist/operators/index.d.ts",
+      "require": "./dist/operators/index.js",
+      "import": "./dist/esm/operators/index.js",
+      "default": "./dist/esm/operators/index.js"
+    },
+    "./operators/*": {
+      "types": "./dist/operators/*.d.ts",
+      "require": "./dist/operators/*.js",
+      "import": "./dist/esm/operators/*.js",
+      "default": "./dist/esm/operators/*.js"
+    },
+    "./providers": {
+      "types": "./dist/providers/index.d.ts",
+      "require": "./dist/providers/index.js",
+      "import": "./dist/esm/providers/index.js",
+      "default": "./dist/esm/providers/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "require": "./dist/types/index.js",
+      "import": "./dist/esm/types/index.js",
+      "default": "./dist/esm/types/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "prepublishOnly": "cd ../.. && yarn build && cp README.md lib/dexrx/ && cp LICENSE lib/dexrx/ && echo 'Build complete, source maps included for debugging' || true",
+    "postpublish": "cd ../.. && rm -f lib/dexrx/README.md lib/dexrx/LICENSE && echo 'README.md and LICENSE cleaned up' || true"
+  },
+  "keywords": [
+    "rxjs",
+    "reactive",
+    "graph",
+    "dataflow",
+    "declarative",
+    "typescript"
+  ],
+  "author": "legann",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/legann/dexrx"
+  },
+  "homepage": "https://github.com/legann/dexrx#readme",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "rxjs": ">=7.8.0 <7.9.0"
+  },
+  "peerDependenciesMeta": {
+    "rxjs": {
+      "optional": false
+    }
+  }
+}

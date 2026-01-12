@@ -1,0 +1,116 @@
+name: Generate API Documentation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'lib/dexrx/src/**'
+      - 'lib/dexrx/typedoc.json'
+      - 'lib/dexrx/tsconfig.json'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'lib/dexrx/src/**'
+      - 'lib/dexrx/typedoc.json'
+      - 'lib/dexrx/tsconfig.json'
+  workflow_dispatch:
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required for git push back to repository
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # Don't use cache as there's no lock file in source repo
+      
+      - name: Install TypeDoc and TypeScript
+        run: |
+          npm install -g typedoc typescript
+      
+      - name: Install package dependencies
+        run: |
+          cd lib/dexrx
+          # Install dependencies from package.json (rxjs)
+          if [ -f "package.json" ]; then
+            npm install --no-save
+          else
+            npm install --no-save rxjs
+          fi
+          # Install Node.js type definitions locally (required for compilation)
+          npm install --no-save --save-dev @types/node
+          # Verify that @types/node is installed
+          if [ ! -d "node_modules/@types/node" ]; then
+            echo "Warning: @types/node not found, installing globally..."
+            npm install -g @types/node
+          fi
+      
+      - name: Build dexrx package
+        run: |
+          cd lib/dexrx
+          # Compile only src directory using lib/dexrx/tsconfig.json
+          # First, verify that tests are not included in compilation
+          echo "Checking for test files in compilation..."
+          COMPILE_OUTPUT=$(npx tsc --project tsconfig.json --listFilesOnly --skipLibCheck 2>&1 || true)
+          TEST_FILES=$(echo "$COMPILE_OUTPUT" | grep -E "(tests/|\.test\.ts|\.spec\.ts)" || true)
+          if [ -n "$TEST_FILES" ]; then
+            echo "ERROR: Tests found in compilation!"
+            echo "$TEST_FILES"
+            exit 1
+          fi
+          echo "✅ No test files found in compilation"
+          # Now compile for real - filter out test file errors
+          echo "Compiling TypeScript..."
+          TSC_OUTPUT=$(npx tsc --project tsconfig.json --skipLibCheck 2>&1 || true)
+          # Filter out errors from test files
+          SRC_ERRORS=$(echo "$TSC_OUTPUT" | grep -vE "(tests/|\.test\.ts|\.spec\.ts)" || true)
+          TEST_ERRORS=$(echo "$TSC_OUTPUT" | grep -E "(tests/|\.test\.ts|\.spec\.ts)" || true)
+          if [ -n "$TEST_ERRORS" ]; then
+            echo "⚠️  Warning: TypeScript found errors in test files (these are ignored):"
+            echo "$TEST_ERRORS" | head -5
+            echo "... (test errors ignored)"
+          fi
+          if [ -n "$SRC_ERRORS" ]; then
+            echo "ERROR: TypeScript errors in source files:"
+            echo "$SRC_ERRORS"
+            exit 1
+          fi
+          echo "✅ Compilation successful (test files ignored)"
+      
+      - name: Generate API documentation
+        run: |
+          # Run TypeDoc from repository root to ensure paths are correct
+          # entryPoints in typedoc.json are relative to lib/dexrx/, so we specify them explicitly
+          # Pass tsconfig.json to TypeDoc so it uses the same compiler options
+          cd lib/dexrx
+          npx typedoc \
+            --options typedoc.json \
+            --tsconfig tsconfig.json \
+            --readme ../../README.md \
+            --out docs/api \
+            src/index.ts
+      
+      - name: Commit and push generated docs
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          # Force add docs/api/ even if it's in .gitignore (it's auto-generated)
+          git add -f lib/dexrx/docs/api/
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "docs: auto-generate API documentation [skip ci]"
+            git push
+          fi
+
