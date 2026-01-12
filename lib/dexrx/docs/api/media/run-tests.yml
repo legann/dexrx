@@ -1,0 +1,149 @@
+name: Run Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'lib/dexrx/src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'lib/dexrx/package.json'
+      - 'tsconfig.json'
+      - 'tsconfig.jest.json'
+      - 'jest.config.ts'
+      - '.test-matrix.json'
+      - '.github/workflows/run-tests.yml'
+  
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'lib/dexrx/src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'lib/dexrx/package.json'
+      - 'tsconfig.json'
+      - 'tsconfig.jest.json'
+      - 'jest.config.ts'
+      - '.test-matrix.json'
+  
+  workflow_dispatch:
+    inputs:
+      node_version:
+        description: 'Node.js version to test (or "all" for matrix)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - '20'
+          - '22'
+      rxjs_version:
+        description: 'RxJS version to test (or "all" for matrix)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - '7.8.0'
+          - '^7.8.0'
+
+jobs:
+  # Generate matrix from .test-matrix.json
+  setup-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      node-versions: ${{ steps.read-config.outputs.node-versions }}
+      rxjs-versions: ${{ steps.read-config.outputs.rxjs-versions }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Read test matrix configuration
+        id: read-config
+        run: |
+          # Read versions from .test-matrix.json (single source of truth)
+          NODE_VERSIONS=$(cat .test-matrix.json | jq -c '.node.versions')
+          RXJS_VERSIONS=$(cat .test-matrix.json | jq -c '.rxjs.versions')
+          
+          # Override with manual input if workflow_dispatch was used
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "📋 Manual workflow trigger detected"
+            
+            # Override Node.js version if specified
+            if [ "${{ github.event.inputs.node_version }}" != "all" ]; then
+              NODE_VERSIONS='["${{ github.event.inputs.node_version }}"]'
+              echo "  Overriding Node.js versions: ${NODE_VERSIONS}"
+            fi
+            
+            # Override RxJS version if specified
+            if [ "${{ github.event.inputs.rxjs_version }}" != "all" ]; then
+              RXJS_VERSIONS='["${{ github.event.inputs.rxjs_version }}"]'
+              echo "  Overriding RxJS versions: ${RXJS_VERSIONS}"
+            fi
+          fi
+          
+          echo "node-versions=${NODE_VERSIONS}" >> $GITHUB_OUTPUT
+          echo "rxjs-versions=${RXJS_VERSIONS}" >> $GITHUB_OUTPUT
+          
+          echo "📋 Test Matrix Configuration:"
+          echo "  Node.js versions: ${NODE_VERSIONS}"
+          echo "  RxJS versions: ${RXJS_VERSIONS}"
+
+  test:
+    needs: setup-matrix
+    name: Test (Node ${{ matrix.node }}, RxJS ${{ matrix.rxjs }})
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node: ${{ fromJson(needs.setup-matrix.outputs.node-versions) }}
+        rxjs: ${{ fromJson(needs.setup-matrix.outputs.rxjs-versions) }}
+      fail-fast: false
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      
+      - name: Install dependencies
+        run: |
+          if [ -f "package.json" ]; then
+            npm install
+          else
+            cd lib/dexrx
+            npm install --no-save --save-dev @types/node typescript jest ts-jest @types/jest karma karma-chrome-launcher karma-jasmine karma-sourcemap-loader karma-webpack karma-typescript webpack ts-loader jasmine-core
+            cd ../..
+          fi
+      
+      - name: Install RxJS ${{ matrix.rxjs }}
+        run: npm install --no-save rxjs@${{ matrix.rxjs }}
+      
+      - name: Verify installed versions
+        run: |
+          echo "📌 Node.js: $(node -v)"
+          echo "📌 npm: $(npm -v)"
+          echo "📌 RxJS: $(npm list rxjs --depth=0 2>/dev/null | grep rxjs@ || echo 'not found')"
+      
+      - name: Run Jest tests (Node.js)
+        run: |
+          if [ -f "package.json" ] && grep -q '"test"' package.json; then
+            npm test
+          else
+            echo "⚠️  No test script found, skipping Jest tests"
+          fi
+      
+      - name: Run Karma tests (Browser)
+        run: |
+          if [ -f "package.json" ] && grep -q '"test:karma:single"' package.json; then
+            npm run test:karma:single
+          else
+            echo "⚠️  No test:karma:single script found, skipping Karma tests"
+          fi
