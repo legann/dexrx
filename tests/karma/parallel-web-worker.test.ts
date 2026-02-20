@@ -208,8 +208,7 @@ describe('WebWorker Parallel Execution (Browser) - Build API', () => {
           {
             id: 'node1',
             type: 'heavyCompute',
-            config: { iterations: 100, value: 10 },
-            isSubscribed: true,
+            config: { iterations: 100, value: 10, isSubscribed: true },
           },
         ],
       })
@@ -246,8 +245,7 @@ describe('WebWorker Parallel Execution (Browser) - Build API', () => {
           {
             id: 'node1',
             type: 'heavyCompute',
-            config: { iterations: 100, value: 20 },
-            isSubscribed: true,
+            config: { iterations: 100, value: 20, isSubscribed: true },
           },
         ],
       })
@@ -264,7 +262,10 @@ describe('WebWorker Parallel Execution (Browser) - Build API', () => {
         graph.destroy();
         done.fail('No result received');
       }
-    }, 2000);
+    }).catch((error) => {
+      graph.destroy();
+      done.fail(error);
+    });
   }, 5000);
 
   // Test reactive engine with parallel execution
@@ -300,8 +301,7 @@ describe('WebWorker Parallel Execution (Browser) - Build API', () => {
             id: 'processor',
             type: 'heavyCompute',
             inputs: ['source1', 'source2'],
-            config: { iterations: 100 }, // Reduced for browser stability
-            isSubscribed: true,
+            config: { iterations: 100, isSubscribed: true }, // Reduced for browser stability
           },
         ],
       })
@@ -359,14 +359,12 @@ describe('WebWorker Parallel Execution (Browser) - Build API', () => {
           {
             id: 'compare_node_1',
             type: 'heavyCompute',
-            config: { iterations: 100, value: 1 }, // Reduced for browser stability
-            isSubscribed: true,
+            config: { iterations: 100, value: 1, isSubscribed: true }, // Reduced for browser stability
           },
           {
             id: 'compare_node_2',
             type: 'heavyCompute',
-            config: { iterations: 100, value: 2 }, // Reduced for browser stability
-            isSubscribed: true,
+            config: { iterations: 100, value: 2, isSubscribed: true }, // Reduced for browser stability
           },
         ],
       })

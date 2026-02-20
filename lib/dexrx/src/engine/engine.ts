@@ -378,11 +378,13 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       totalErrors: this.errorCount,
     });
 
+    // Emit hook first so listeners (e.g. tests) receive the event even if logging throws
+    this.hookManager.emit(EngineEventType.NODE_COMPUTE_ERROR, nodeId, nodeError);
+
     if (!this.options.silentErrors) {
       this.logger.inputGuardError(`Computation error in node ${nodeId}`, nodeError, false);
     }
 
-    this.hookManager.emit(EngineEventType.NODE_COMPUTE_ERROR, nodeId, nodeError);
     return null;
   }
 

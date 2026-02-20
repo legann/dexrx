@@ -9,6 +9,12 @@ console.log('Test setup. Worker path: /base/tests/workers/web-worker.js');
 
 describe('ReactiveGraphEngine - Core Features (Browser) - Build API', () => {
   // Plugins for tests
+  const sourcePlugin: INodePlugin = {
+    type: 'source',
+    category: 'data',
+    compute: (config: { value?: unknown }, _inputs: readonly unknown[]) => config?.value,
+  };
+
   const calculatorPlugin: INodePlugin = {
     type: 'calculator',
     category: 'operational',
@@ -64,7 +70,7 @@ describe('ReactiveGraphEngine - Core Features (Browser) - Build API', () => {
           {
             id: 'error-node',
             type: 'error-generator',
-            isSubscribed: true,
+            config: { isSubscribed: true },
           },
         ],
       })
@@ -85,12 +91,12 @@ describe('ReactiveGraphEngine - Core Features (Browser) - Build API', () => {
       }
     );
 
-    // Execute graph
+    // Execute graph (engine catches error, emits hook, sets node value to null; execute() resolves)
     graph.execute().then(() => {
       unsubscribe();
       expect(errorCaught).toBe(true);
       done();
-    }).catch(() => {
+    }).catch(err => {
       unsubscribe();
       expect(errorCaught).toBe(true);
       done();
@@ -105,7 +111,7 @@ describe('ReactiveGraphEngine - Core Features (Browser) - Build API', () => {
           {
             id: 'async-node',
             type: 'async-short',
-            isSubscribed: true,
+            config: { isSubscribed: true },
           },
         ],
       })
@@ -137,57 +143,37 @@ describe('ReactiveGraphEngine - Core Features (Browser) - Build API', () => {
     });
   });
 
-  it('should cancel stale computations when enableCancelableCompute', done => {
+  it('should receive updates when run() and updateGraph with autoStart', function (done) {
+    // In 2.0 cancellation is via Observable unsubscribe; enableCancelableCompute was removed.
+    // updateGraph() recreates the engine. After updateGraph(..., { autoStart: true }) the new engine runs;
+    // we wait for stabilization via execute() and assert from exportState (reliable in browser and Node).
     const graph = createGraph(
-      withOptions({
-        engine: {
-          enableCancelableCompute: true,
-        },
-      }),
       withNodesConfig({
-        nodesPlugins: [asyncShortPlugin],
-        nodes: [
-          {
-            id: 'async-node',
-            type: 'async-short',
-            isSubscribed: true,
-          },
-        ],
+        nodesPlugins: [sourcePlugin],
+        nodes: [{ id: 'a', type: 'source', config: { value: 10 } }],
       })
     );
     graphs.push(graph);
 
-    // Start as long-running graph for updates
-    const longRunningGraph = graph.run();
+    graph.run();
+    graph.updateGraph(
+      [{ id: 'b', type: 'source', config: { value: 20 } }],
+      { autoStart: true }
+    );
 
-    // Check that we can update node and cancel previous computation
-    let updateCount = 0;
+    expect(graph.getState()).toBe(EngineState.RUNNING);
+    expect(graph.getStats().nodesCount).toBe(1);
 
-    const subscription = graph.observeNode('async-node')?.subscribe({
-      next: () => {
-        updateCount++;
-
-        if (updateCount === 1) {
-          // After first update, update graph again
-          longRunningGraph.updateGraph([
-            {
-              id: 'async-node',
-              type: 'async-short',
-              isSubscribed: true,
-            },
-          ], { autoStart: true });
-        } else if (updateCount === 2) {
-          // After second update, complete test
-          subscription?.unsubscribe();
-          done();
-        }
-      },
-      error: err => {
-        fail('Should not have error: ' + err);
-        done();
-      },
+    graph.execute().then(() => {
+      const state = graph.exportState();
+      expect(state.nodes['b']).toBeDefined();
+      expect(state.nodes['b'].currentValue).toBe(20);
+      done();
+    }).catch((err: unknown) => {
+      fail('execute after updateGraph should resolve: ' + err);
+      done();
     });
-  });
+  }, 10000);
 
   it('should provide reactivity between nodes', async () => {
     const graph = createGraph(
@@ -203,8 +189,7 @@ describe('ReactiveGraphEngine - Core Features (Browser) - Build API', () => {
             id: 'transformer',
             type: 'calculator',
             inputs: ['source'],
-            config: { multiplier: 2 },
-            isSubscribed: true,
+            config: { multiplier: 2, isSubscribed: true },
           },
         ],
       })
@@ -235,8 +220,7 @@ describe('ReactiveGraphEngine - Core Features (Browser) - Build API', () => {
         id: 'transformer',
         type: 'calculator',
         inputs: ['source'],
-        config: { multiplier: 2 },
-        isSubscribed: true,
+        config: { multiplier: 2, isSubscribed: true },
       },
     ], { autoStart: true });
     
