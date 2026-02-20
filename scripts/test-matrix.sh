@@ -5,6 +5,13 @@
 
 # Do NOT use set -e - we check critical commands manually
 
+# Colors for output (defined early to use in all sections)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
 # Detect working mode (monorepo vs standalone)
 IS_MONOREPO=false
 if [ -f "../../package.json" ] && grep -q '"workspaces"' "../../package.json" 2>/dev/null; then
@@ -31,13 +38,6 @@ cleanup() {
 # Trap for handling interrupts (Ctrl+C)
 # Do NOT use EXIT - it triggers after every function!
 trap cleanup INT TERM
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
 
 # Load configuration from .test-matrix.json (single source of truth)
 CONFIG_FILE=".test-matrix.json"
@@ -184,13 +184,13 @@ run_tests() {
     # Install specific RxJS version
     echo -e "${YELLOW}🔄 Installing RxJS ${rxjs_ver}...${NC}"
     
+    # Save backup only on first run (for both modes)
+    if [ ! -f "package.json.backup" ]; then
+        cp package.json package.json.backup
+    fi
+    
     if [ "$IS_MONOREPO" = true ]; then
         # Monorepo mode: change package.json and reinstall
-        
-        # Save backup only on first run
-        if [ ! -f "package.json.backup" ]; then
-            cp package.json package.json.backup
-        fi
         
         # Restore original package.json before changing
         if [ -f "package.json.backup" ]; then
@@ -210,6 +210,7 @@ run_tests() {
         yarn install --force 2>&1 | tail -5 || true
     else
         # Standalone mode: regular yarn add (ignore warnings)
+        # Note: yarn add modifies package.json, backup is created above
         yarn add rxjs@${rxjs_ver} 2>&1 | tail -5 || true
     fi
     
@@ -329,17 +330,17 @@ done
 
 # Restore original state
 echo ""
-if [ "$IS_MONOREPO" = true ]; then
-    # Monorepo: restore package.json
-    if [ -f "package.json.backup" ]; then
-        echo -e "${YELLOW}🔄 Restoring original package.json...${NC}"
-        mv package.json.backup package.json
+if [ -f "package.json.backup" ]; then
+    echo -e "${YELLOW}🔄 Restoring original package.json...${NC}"
+    mv package.json.backup package.json
+    
+    if [ "$IS_MONOREPO" = true ]; then
+        # Monorepo: full reinstall
         yarn install --force 2>&1 | tail -5 || true
+    else
+        # Standalone: regular install
+        yarn install 2>&1 | tail -5 || true
     fi
-else
-    # Standalone: restore RxJS version
-    echo -e "${YELLOW}🔄 Restoring original RxJS version (${ORIGINAL_RXJS})...${NC}"
-    yarn add rxjs@${ORIGINAL_RXJS} 2>&1 | tail -3 || true
 fi
 
 # Final report

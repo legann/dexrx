@@ -1,13 +1,17 @@
+import type { Observable } from 'rxjs';
 import { INodePlugin, NodeCategory } from '../types/node-plugin';
 import { ExecutionContext } from '../types/execution-context';
 import { SKIP_NODE_EXEC } from '../types/engine-flags';
 import { NodeConfig } from '../types/utils';
+import { SkipInputException } from '../utils/node-error';
 
 /**
- * Node wrapper interface
+ * Node wrapper interface.
+ * Plugin compute() returns Observable | value. Wrapper returns the same;
+ * in parallel mode execution context may return Promise (adapter), engine normalizes via toObservable.
  */
 export interface NodeWrapper {
-  compute(inputs: readonly unknown[]): unknown | Promise<unknown>;
+  compute(inputs: readonly unknown[]): Observable<unknown> | Promise<unknown> | unknown;
   destroy(): void;
 }
 
@@ -30,33 +34,22 @@ class DefaultNodeWrapper implements NodeWrapper {
     private readonly config: RuntimeConfig
   ) {}
 
-  compute(inputs: readonly unknown[]): unknown | Promise<unknown> {
-    // Category comes from plugin, fallback to runtime context for backward compatibility
+  compute(inputs: readonly unknown[]): Observable<unknown> | unknown {
     const category = this.plugin.category ?? this.config.__runtime?.category;
 
-    // Only for operational nodes do async handling
     if (category === 'operational') {
       return this.handleOperationalNode(inputs);
     }
 
-    // For other nodes (data nodes, etc.) - as usual
-    return this.plugin.compute(this.config, inputs);
+    return this.plugin.compute(this.config, inputs) as Observable<unknown> | unknown;
   }
 
-  private async handleOperationalNode(inputs: readonly unknown[]): Promise<unknown> {
-    // 1. Wait for all Promises
-    const resolvedInputs = await Promise.all(
-      inputs.map(input => (input instanceof Promise ? input : Promise.resolve(input)))
-    );
-
-    // 2. Check for SKIP_NODE_EXEC
-    if (resolvedInputs.some(v => v === SKIP_NODE_EXEC)) {
-      const { SkipInputException } = await import('../utils/node-error');
+  private handleOperationalNode(inputs: readonly unknown[]): Observable<unknown> | unknown {
+    // Inputs are already resolved by the pipeline (mergeMap(Promise.all(values)))
+    if (inputs.some(v => v === SKIP_NODE_EXEC)) {
       throw new SkipInputException(this.config.__runtime?.nodeId ?? 'unknown');
     }
-
-    // 3. Execute plugin
-    return this.plugin.compute(this.config, resolvedInputs);
+    return this.plugin.compute(this.config, inputs) as Observable<unknown> | unknown;
   }
 
   destroy(): void {
@@ -78,35 +71,16 @@ class ParallelNodeWrapper implements NodeWrapper {
     private readonly executionContext: ExecutionContext
   ) {}
 
-  async compute(inputs: readonly unknown[]): Promise<unknown> {
-    // Category comes from plugin, fallback to runtime context for backward compatibility
-    // Note: we need to get plugin from registry via nodeType, but for now use runtime context
-    // This will be fixed when we pass plugin reference to wrapper
+  compute(inputs: readonly unknown[]): Promise<unknown> | Observable<unknown> | unknown {
     const category = this.config.__runtime?.category;
 
-    // Only for operational nodes do Promise handling and null check
     if (category === 'operational') {
-      return this.handleOperationalNode(inputs);
+      if (inputs.some(v => v === SKIP_NODE_EXEC)) {
+        throw new SkipInputException(this.config.__runtime?.nodeId ?? 'unknown');
+      }
     }
-
-    // For other nodes (data nodes, etc.) - as usual
+    // Execution context returns Promise (worker uses firstValueFrom(observable) internally)
     return this.executionContext.execute(this.nodeType, this.config, inputs);
-  }
-
-  private async handleOperationalNode(inputs: readonly unknown[]): Promise<unknown> {
-    // 1. Wait for all Promises
-    const resolvedInputs = await Promise.all(
-      inputs.map(input => (input instanceof Promise ? input : Promise.resolve(input)))
-    );
-
-    // 2. Check for SKIP_NODE_EXEC
-    if (resolvedInputs.some(v => v === SKIP_NODE_EXEC)) {
-      const { SkipInputException } = await import('../utils/node-error');
-      throw new SkipInputException(this.config.__runtime?.nodeId ?? 'unknown');
-    }
-
-    // 3. Execute plugin through execution context
-    return this.executionContext.execute(this.nodeType, this.config, resolvedInputs);
   }
 
   destroy(): void {

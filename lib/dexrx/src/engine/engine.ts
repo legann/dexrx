@@ -5,6 +5,7 @@ import {
   Subject,
   Observable,
   from,
+  of,
   finalize,
 } from 'rxjs';
 import {
@@ -42,7 +43,6 @@ import { ConsoleLoggerAdapter } from '../utils/logging/console-logger-adapter';
 import { IInputGuardService } from '../types/input-guard';
 import { InputGuardService } from '../utils/input-guard/input-guard-service';
 import { EngineEventHandlers, EngineEventType, UnsubscribeFn } from '../types/engine-hooks';
-import { isCancelableComputation } from '../types/cancelable-computation';
 import { EngineState } from '../types/engine-state';
 import { EngineStats } from '../types/engine-stats';
 import { HookManager } from './hook-manager';
@@ -50,6 +50,17 @@ import { EngineMemoryStats } from '../types/engine-stats';
 import { IEnvironmentAdapter, createEnvironmentAdapter } from '../utils/environment';
 import { NodeConfig } from '../types/utils';
 import { getErrorMessage } from '../utils/node-error';
+
+/** Normalize plugin result to Observable (Observable | Promise | value). Promise only from execution context adapter. */
+function toObservable(result: unknown): Observable<unknown> {
+  if (result != null && typeof result === 'object' && typeof (result as { subscribe?: unknown }).subscribe === 'function') {
+    return result as Observable<unknown>;
+  }
+  if (result instanceof Promise) {
+    return from(result);
+  }
+  return of(result);
+}
 
 // Generate unique identifier for engine instance
 function generateUuid(): string {
@@ -110,11 +121,10 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
   private executionContext?: ExecutionContext;
   private readonly logger: ConsoleLoggerAdapter;
   private readonly inputGuardService: IInputGuardService;
-  private readonly activeComputations = new Map<string, { cancel: () => void }>();
   private readonly dataNodesExecutionMode: DataNodesExecutionMode;
 
-  // 🆕 Add tracking of active Promise tasks
-  private readonly activePromiseTasks = new Map<string, Promise<unknown>>();
+  /** Node ids with an Observable subscription that has not yet completed (for stabilization). */
+  private readonly activeObservableNodes = new Set<string>();
 
   // 🆕 Deferred hooks for SkipInputException
   private readonly pendingSkipComputationHooks = new Set<string>();
@@ -528,63 +538,40 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         );
 
         if (inputStreams.length === 0) {
-          // immediate compute for zero-input nodes
           try {
-            // 🔧 INCREASE computeCount for data nodes without inputs
             this.computeCount++;
+            const obs = toObservable(wrapper.compute([]));
+            this.activeObservableNodes.add(sanitizedDef.id);
 
-            const result = wrapper.compute([]);
-
-            // If result is Promise, handle asynchronously
-            if (result instanceof Promise) {
-              this.logger.logEvent('engine', 'promise-detected', {
-                nodeId: sanitizedDef.id,
-                type: sanitizedDef.type,
-              });
-
-              // 🆕 Add Promise to active tasks tracking
-              this.activePromiseTasks.set(sanitizedDef.id, result);
-
-              result
-                .then(
-                  value => {
-                    subject.next(value);
-                    this.logger.logEvent('engine', 'async-compute-success', {
-                      nodeId: sanitizedDef.id,
-                      type: sanitizedDef.type,
-                      valueType: typeof value,
-                    });
-                  },
-                  error => {
-                    this.handleComputeError(sanitizedDef.id, error);
-                    subject.next(null);
-                  }
-                )
-                .finally(() => {
-                  // 🆕 Remove Promise from tracking when it completes
-                  this.activePromiseTasks.delete(sanitizedDef.id);
-                  this.logger.logEvent('engine', 'promise-completed', {
-                    nodeId: sanitizedDef.id,
-                    type: sanitizedDef.type,
-                  });
-
-                  // 🆕 Check deferred hooks
-                  this.checkAndEmitPendingSkipComputationHooks();
+            const sub = obs.subscribe({
+              next: value => {
+                subject.next(value);
+                this.logger.logEvent('engine', 'compute-success', {
+                  nodeId: sanitizedDef.id,
+                  type: sanitizedDef.type,
+                  valueType: typeof value,
                 });
-            } else {
-              subject.next(result);
-              this.logger.logEvent('engine', 'sync-compute-success', {
-                nodeId: sanitizedDef.id,
-                type: sanitizedDef.type,
-                valueType: typeof result,
-              });
-            }
+              },
+              error: error => {
+                this.handleComputeError(sanitizedDef.id, error);
+                subject.next(null);
+                this.activeObservableNodes.delete(sanitizedDef.id);
+                this.checkAndEmitPendingSkipComputationHooks();
+              },
+              complete: () => {
+                this.activeObservableNodes.delete(sanitizedDef.id);
+                this.logger.logEvent('engine', 'observable-completed', {
+                  nodeId: sanitizedDef.id,
+                  type: sanitizedDef.type,
+                });
+                this.checkAndEmitPendingSkipComputationHooks();
+              },
+            });
+            this.subscriptions.set(sanitizedDef.id, sub);
           } catch (error) {
-            // Safely handle compute error - wrap in try-catch to prevent error propagation
             try {
               this.handleComputeError(sanitizedDef.id, error);
             } catch (handleError) {
-              // If handleComputeError itself throws, log it but don't propagate
               this.logger.error('Error in handleComputeError', handleError);
             }
             subject.next(null);
@@ -592,8 +579,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           return;
         }
 
-        // Create processing pipeline
-        let pipeline = combineLatest(inputStreams).pipe(
+        // Inputs pipeline: emits resolved input arrays
+        let inputPipeline: Observable<unknown[]> = combineLatest(inputStreams).pipe(
           takeUntil(this.destroy$),
           takeUntil(destroy$),
           skipWhile(values => values.includes(INIT_NODE_EXEC)), // Wait until all nodes are initialized
@@ -602,108 +589,49 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
         // Apply optional debounce
         if (this.options.debounceTime && this.options.debounceTime > 0) {
-          pipeline = pipeline.pipe(debounceTime(this.options.debounceTime));
+          inputPipeline = inputPipeline.pipe(debounceTime(this.options.debounceTime));
         }
 
         // Apply optional throttle
         if (this.options.throttleTime && this.options.throttleTime > 0) {
-          pipeline = pipeline.pipe(throttleTime(this.options.throttleTime));
+          inputPipeline = inputPipeline.pipe(throttleTime(this.options.throttleTime));
         }
 
         // Apply optional distinctUntilChanged
         if (this.options.distinctValues) {
-          pipeline = pipeline.pipe(
+          inputPipeline = inputPipeline.pipe(
             distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
           );
         }
 
-        // Apply computation with error handling, supporting async operations
-        pipeline = pipeline.pipe(
+        // Computation pipeline: emits computed values (unknown)
+        const pipeline = inputPipeline.pipe(
           mergeMap(values => {
             try {
               this.computeCount++;
-
               this.logger.logEvent('engine', 'node-inputs-changed', {
                 nodeId: sanitizedDef.id,
                 inputCount: values.length,
               });
 
-              // Cancel previous task
-              if (this.options.enableCancelableCompute) {
-                const currentTask = this.activeComputations.get(sanitizedDef.id);
-                if (currentTask) {
-                  try {
-                    currentTask.cancel();
-                    this.logger.logEvent('engine', 'task-cancelled', {
-                      nodeId: sanitizedDef.id,
-                      reason: 'new-computation',
-                    });
-                  } catch (error) {
-                    const errorMessage = error instanceof Error ? error : new Error(String(error));
-                    this.logger.inputGuardError(
-                      `Error cancelling task: ${sanitizedDef.id}`,
-                      errorMessage
-                    );
-                    this.logger.logEvent('engine', 'task-cancel-error', {
-                      nodeId: sanitizedDef.id,
-                      error: errorMessage.message,
-                    });
-                  }
-                }
-                this.activeComputations.delete(sanitizedDef.id);
-              }
-
               const result = wrapper.compute(values);
+              const obs = toObservable(result);
+              this.activeObservableNodes.add(sanitizedDef.id);
 
-              // Replace check with cancelable result
-              if (this.options.enableCancelableCompute && isCancelableComputation(result)) {
-                if (result.cancel) {
-                  this.activeComputations.set(sanitizedDef.id, { cancel: result.cancel });
-                }
-
-                return from(result.promise).pipe(
-                  catchError(error => {
-                    this.handleComputeError(sanitizedDef.id, error);
-                    return from([null]);
-                  })
-                );
-              }
-
-              // regular Promise
-              if (result instanceof Promise) {
-                this.logger.logEvent('engine', 'promise-detected', {
-                  nodeId: sanitizedDef.id,
-                  type: sanitizedDef.type,
-                });
-
-                // 🆕 Add Promise to active tasks tracking
-                this.activePromiseTasks.set(sanitizedDef.id, result);
-
-                return from(result).pipe(
-                  catchError(error => {
-                    this.logger.logEvent('engine', 'promise-rejected', {
-                      nodeId: sanitizedDef.id,
-                      error: error instanceof Error ? error.message : String(error),
-                    });
-                    this.handleComputeError(sanitizedDef.id, error);
-                    return from([null]);
-                  }),
-                  // 🆕 Remove Promise from tracking when it completes
-                  finalize(() => {
-                    this.activePromiseTasks.delete(sanitizedDef.id);
-                    this.logger.logEvent('engine', 'promise-completed', {
-                      nodeId: sanitizedDef.id,
-                      type: sanitizedDef.type,
-                    });
-
-                    // 🆕 Check deferred hooks
-                    this.checkAndEmitPendingSkipComputationHooks();
-                  })
-                );
-              }
-
-              // regular value
-              return from([result]);
+              return obs.pipe(
+                catchError(error => {
+                  this.logger.logEvent('engine', 'observable-error', {
+                    nodeId: sanitizedDef.id,
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                  this.handleComputeError(sanitizedDef.id, error);
+                  return from([null]);
+                }),
+                finalize(() => {
+                  this.activeObservableNodes.delete(sanitizedDef.id);
+                  this.checkAndEmitPendingSkipComputationHooks();
+                })
+              );
             } catch (error) {
               this.handleComputeError(sanitizedDef.id, error);
               return from([null]);
@@ -853,49 +781,28 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         // Zero input case
         if (inputStreams.length === 0) {
           try {
-            // 🔧 INCREASE computeCount for data nodes without inputs
             this.computeCount++;
+            const obs = toObservable(wrapper.compute([]));
+            this.activeObservableNodes.add(id);
 
-            const result = wrapper.compute([]);
-
-            // If result is Promise, handle asynchronously
-            if (result instanceof Promise) {
-              this.logger.logEvent('engine', 'promise-detected', {
-                nodeId: id,
-                type: sanitizedDef.type,
-              });
-
-              // 🆕 Add Promise to active tasks tracking
-              this.activePromiseTasks.set(id, result);
-
-              result
-                .then(
-                  value => oldSubject.next(value),
-                  error => {
-                    this.handleComputeError(id, error);
-                    oldSubject.next(null);
-                  }
-                )
-                .finally(() => {
-                  // 🆕 Remove Promise from tracking when it completes
-                  this.activePromiseTasks.delete(id);
-                  this.logger.logEvent('engine', 'promise-completed', {
-                    nodeId: id,
-                    type: sanitizedDef.type,
-                  });
-
-                  // 🆕 Check deferred hooks
-                  this.checkAndEmitPendingSkipComputationHooks();
-                });
-            } else {
-              oldSubject.next(result);
-            }
+            const sub = obs.subscribe({
+              next: value => oldSubject.next(value),
+              error: error => {
+                this.handleComputeError(id, error);
+                oldSubject.next(null);
+                this.activeObservableNodes.delete(id);
+                this.checkAndEmitPendingSkipComputationHooks();
+              },
+              complete: () => {
+                this.activeObservableNodes.delete(id);
+                this.checkAndEmitPendingSkipComputationHooks();
+              },
+            });
+            this.subscriptions.set(id, sub);
           } catch (error) {
-            // Safely handle compute error - wrap in try-catch to prevent error propagation
             try {
               this.handleComputeError(id, error);
             } catch (handleError) {
-              // If handleComputeError itself throws, log it but don't propagate
               this.logger.error('Error in handleComputeError', handleError);
             }
             oldSubject.next(null);
@@ -903,8 +810,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           return;
         }
 
-        // Create processing pipeline
-        let pipeline = combineLatest(inputStreams).pipe(
+        // Inputs pipeline: emits resolved input arrays
+        let inputPipeline: Observable<unknown[]> = combineLatest(inputStreams).pipe(
           takeUntil(this.destroy$),
           takeUntil(destroy$),
           skipWhile(values => values.includes(INIT_NODE_EXEC)), // Wait until all nodes are initialized
@@ -912,98 +819,38 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         );
 
         if (this.options.debounceTime && this.options.debounceTime > 0) {
-          pipeline = pipeline.pipe(debounceTime(this.options.debounceTime));
+          inputPipeline = inputPipeline.pipe(debounceTime(this.options.debounceTime));
         }
 
         if (this.options.throttleTime && this.options.throttleTime > 0) {
-          pipeline = pipeline.pipe(throttleTime(this.options.throttleTime));
+          inputPipeline = inputPipeline.pipe(throttleTime(this.options.throttleTime));
         }
 
         if (this.options.distinctValues) {
-          pipeline = pipeline.pipe(
+          inputPipeline = inputPipeline.pipe(
             distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
           );
         }
 
-        // Apply computation with error handling
-        pipeline = pipeline.pipe(
+        // Computation pipeline: emits computed values (unknown)
+        const pipeline = inputPipeline.pipe(
           mergeMap(values => {
             try {
               this.computeCount++;
-
-              // Cancel previous task
-              if (this.options.enableCancelableCompute) {
-                const currentTask = this.activeComputations.get(id);
-                if (currentTask) {
-                  try {
-                    currentTask.cancel();
-                    this.logger.logEvent('engine', 'task-cancelled', {
-                      nodeId: id,
-                      reason: 'update-node',
-                    });
-                  } catch (error) {
-                    const errorMessage = error instanceof Error ? error : new Error(String(error));
-                    this.logger.inputGuardError(`Error cancelling task: ${id}`, errorMessage);
-                    this.logger.logEvent('engine', 'task-cancel-error', {
-                      nodeId: id,
-                      error: errorMessage.message,
-                    });
-                  }
-                }
-                this.activeComputations.delete(id);
-              }
-
               const result = wrapper.compute(values);
+              const obs = toObservable(result);
+              this.activeObservableNodes.add(id);
 
-              // Replace check with cancelable result
-              if (this.options.enableCancelableCompute && isCancelableComputation(result)) {
-                if (result.cancel) {
-                  this.activeComputations.set(id, { cancel: result.cancel });
-                }
-
-                return from(result.promise).pipe(
-                  catchError(error => {
-                    this.handleComputeError(id, error);
-                    return from([null]);
-                  })
-                );
-              }
-
-              // Regular Promise
-              if (result instanceof Promise) {
-                this.logger.logEvent('engine', 'promise-detected', {
-                  nodeId: id,
-                  type: sanitizedDef.type,
-                });
-
-                // 🆕 Add Promise to active tasks tracking
-                this.activePromiseTasks.set(id, result);
-
-                return from(result).pipe(
-                  catchError(error => {
-                    this.logger.logEvent('engine', 'promise-rejected', {
-                      nodeId: id,
-                      error: error instanceof Error ? error.message : String(error),
-                    });
-                    this.handleComputeError(id, error);
-                    return from([null]);
-                  }),
-                  // 🆕 Remove Promise from tracking when it completes
-                  finalize(() => {
-                    this.activePromiseTasks.delete(id);
-                    this.logger.logEvent('engine', 'promise-completed', {
-                      nodeId: id,
-                      type: sanitizedDef.type,
-                    });
-
-                    // 🆕 Check deferred hooks
-                    this.checkAndEmitPendingSkipComputationHooks();
-                  })
-                );
-              }
-
-              // Synchronous value
-              return from([result]);
+              return obs.pipe(
+                catchError(error => {
+                  this.handleComputeError(id, error);
+                  return from([null]);
+                }),
+                finalize(() => {
+                  this.activeObservableNodes.delete(id);
+                  this.checkAndEmitPendingSkipComputationHooks();
+                })
+              );
             } catch (error) {
               this.handleComputeError(id, error);
               return from([null]);
@@ -1061,39 +908,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       this.subjects.delete(id);
     }
 
-    // Cleanup active tasks with error handling and logging
-    if (this.options.enableCancelableCompute) {
-      const task = this.activeComputations.get(id);
-      if (task) {
-        try {
-          task.cancel();
-          this.logger.logEvent('engine', 'computation-cancelled', {
-            nodeId: id,
-            reason: 'node-cleanup',
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error : new Error(String(error));
-          this.logger.inputGuardError(
-            `Error cancelling task during node cleanup: ${id}`,
-            errorMessage
-          );
-          this.logger.logEvent('engine', 'computation-cancel-error', {
-            nodeId: id,
-            error: errorMessage.message,
-          });
-        }
-        this.activeComputations.delete(id);
-      }
-    }
-
-    // 🆕 Cleanup active Promise tasks
-    if (this.activePromiseTasks.has(id)) {
-      this.activePromiseTasks.delete(id);
-      this.logger.logEvent('engine', 'promise-task-cleanup', {
-        nodeId: id,
-        reason: 'node-cleanup',
-      });
-    }
+    this.activeObservableNodes.delete(id);
 
     // 🆕 Cleanup deferred hooks for this node
     if (this.pendingSkipComputationHooks.has(id)) {
@@ -1190,7 +1005,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       previousState,
       nodesCount: this.defs.size,
       hasExecutionContext: !!this.executionContext,
-      activeTasksCount: this.activeComputations.size + this.activePromiseTasks.size,
+      activeTasksCount: this.activeObservableNodes.size,
     });
 
     // Clear cache cleanup timer if it was set
@@ -1237,38 +1052,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       this.executionContext = undefined;
     }
 
-    // Cleanup all active tasks
-    if (this.options.enableCancelableCompute) {
-      for (const [nodeId, task] of this.activeComputations.entries()) {
-        try {
-          task.cancel();
-          this.logger.logEvent('engine', 'task-cancelled', {
-            nodeId,
-            reason: 'engine-destroy',
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error : new Error(String(error));
-          this.logger.inputGuardError(
-            `Error cancelling task during engine destruction: ${nodeId}`,
-            errorMessage
-          );
-          this.logger.logEvent('engine', 'task-cancel-error', {
-            nodeId,
-            error: errorMessage.message,
-          });
-        }
-      }
-      this.activeComputations.clear();
-    }
-
-    // 🆕 Cleanup all active Promise tasks
-    if (this.activePromiseTasks.size > 0) {
-      this.logger.logEvent('engine', 'promise-tasks-cleanup', {
-        taskCount: this.activePromiseTasks.size,
-        reason: 'engine-destroy',
-      });
-      this.activePromiseTasks.clear();
-    }
+    this.activeObservableNodes.clear();
 
     // 🆕 Cleanup pending hooks
     if (this.pendingSkipComputationHooks.size > 0) {
@@ -1868,39 +1652,18 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
   }
 
   /**
-   * Cancels all active tasks
+   * Clears active observable task tracking (subscriptions are unsubscribed separately)
    */
   private cancelAllTasks(): void {
-    if (this.options.enableCancelableCompute) {
-      for (const [nodeId, task] of this.activeComputations.entries()) {
-        try {
-          task.cancel();
-          this.logger.logEvent('engine', 'task-cancelled', {
-            nodeId,
-            reason: 'engine-stop',
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error : new Error(String(error));
-          this.logger.inputGuardError(`Error cancelling task: ${nodeId}`, errorMessage);
-          this.logger.logEvent('engine', 'task-cancel-error', {
-            nodeId,
-            error: errorMessage.message,
-          });
-        }
-      }
-      this.activeComputations.clear();
-    }
-
-    // 🆕 Cleanup all active Promise tasks
-    if (this.activePromiseTasks.size > 0) {
-      this.logger.logEvent('engine', 'promise-tasks-cleanup', {
-        taskCount: this.activePromiseTasks.size,
+    if (this.activeObservableNodes.size > 0) {
+      this.logger.logEvent('engine', 'observable-tasks-cleanup', {
+        taskCount: this.activeObservableNodes.size,
         reason: 'engine-stop',
       });
-      this.activePromiseTasks.clear();
+      this.activeObservableNodes.clear();
     }
 
-    // 🆕 Cleanup deferred hooks
+    // Cleanup deferred hooks
     if (this.pendingSkipComputationHooks.size > 0) {
       this.logger.logEvent('engine', 'pending-hooks-cleanup', {
         hookCount: this.pendingSkipComputationHooks.size,
@@ -2025,48 +1788,28 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
     // For nodes without inputs just execute computation
     if (inputStreams.length === 0) {
       try {
-        // 🔧 INCREASE computeCount for data nodes without inputs
         this.computeCount++;
+        const obs = toObservable(wrapper.compute([]));
+        this.activeObservableNodes.add(nodeId);
 
-        const result = wrapper.compute([]);
-
-        if (result instanceof Promise) {
-          this.logger.logEvent('engine', 'promise-detected', {
-            nodeId: nodeId,
-            type: def.type,
-          });
-
-          // 🆕 Add Promise to active tasks tracking
-          this.activePromiseTasks.set(nodeId, result);
-
-          result
-            .then(
-              value => subject.next(value),
-              error => {
-                this.handleComputeError(nodeId, error);
-                subject.next(null);
-              }
-            )
-            .finally(() => {
-              // 🆕 Remove Promise from tracking when it completes
-              this.activePromiseTasks.delete(nodeId);
-              this.logger.logEvent('engine', 'promise-completed', {
-                nodeId: nodeId,
-                type: def.type,
-              });
-
-              // 🆕 Check deferred hooks
-              this.checkAndEmitPendingSkipComputationHooks();
-            });
-        } else {
-          subject.next(result);
-        }
+        const sub = obs.subscribe({
+          next: value => subject.next(value),
+          error: error => {
+            this.handleComputeError(nodeId, error);
+            subject.next(null);
+            this.activeObservableNodes.delete(nodeId);
+            this.checkAndEmitPendingSkipComputationHooks();
+          },
+          complete: () => {
+            this.activeObservableNodes.delete(nodeId);
+            this.checkAndEmitPendingSkipComputationHooks();
+          },
+        });
+        this.subscriptions.set(nodeId, sub);
       } catch (error) {
-        // Safely handle compute error - wrap in try-catch to prevent error propagation
         try {
           this.handleComputeError(nodeId, error);
         } catch (handleError) {
-          // If handleComputeError itself throws, log it but don't propagate
           this.logger.error('Error in handleComputeError', handleError);
         }
         subject.next(null);
@@ -2074,8 +1817,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       return;
     }
 
-    // Create processing pipeline
-    let pipeline = combineLatest(inputStreams).pipe(
+    // Inputs pipeline: emits resolved input arrays
+    let inputPipeline: Observable<unknown[]> = combineLatest(inputStreams).pipe(
       takeUntil(this.destroy$),
       takeUntil(destroy$),
       skipWhile(values => values.includes(INIT_NODE_EXEC)), // Wait until all nodes are initialized
@@ -2083,87 +1826,38 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
     );
 
     if (this.options.debounceTime && this.options.debounceTime > 0) {
-      pipeline = pipeline.pipe(debounceTime(this.options.debounceTime));
+      inputPipeline = inputPipeline.pipe(debounceTime(this.options.debounceTime));
     }
 
     if (this.options.throttleTime && this.options.throttleTime > 0) {
-      pipeline = pipeline.pipe(throttleTime(this.options.throttleTime));
+      inputPipeline = inputPipeline.pipe(throttleTime(this.options.throttleTime));
     }
 
     if (this.options.distinctValues) {
-      pipeline = pipeline.pipe(
+      inputPipeline = inputPipeline.pipe(
         distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
       );
     }
 
-    // Compute processing and subscription
-    pipeline = pipeline.pipe(
+    // Computation pipeline: emits computed values (unknown)
+    const pipeline = inputPipeline.pipe(
       mergeMap(values => {
         try {
           this.computeCount++;
-
-          // Cancel previous task
-          if (this.options.enableCancelableCompute) {
-            const currentTask = this.activeComputations.get(nodeId);
-            if (currentTask) {
-              try {
-                currentTask.cancel();
-              } catch (error) {
-                const errorMessage = error instanceof Error ? error : new Error(String(error));
-                this.logger.inputGuardError(`Error cancelling task: ${nodeId}`, errorMessage);
-              }
-            }
-            this.activeComputations.delete(nodeId);
-          }
-
           const result = wrapper.compute(values);
+          const obs = toObservable(result);
+          this.activeObservableNodes.add(nodeId);
 
-          if (this.options.enableCancelableCompute && isCancelableComputation(result)) {
-            if (result.cancel) {
-              this.activeComputations.set(nodeId, { cancel: result.cancel });
-            }
-
-            return from(result.promise).pipe(
-              catchError(error => {
-                this.handleComputeError(nodeId, error);
-                return from([null]);
-              })
-            );
-          }
-
-          if (result instanceof Promise) {
-            this.logger.logEvent('engine', 'promise-detected', {
-              nodeId: nodeId,
-              type: def.type,
-            });
-
-            // 🆕 Add Promise to active tasks tracking
-            this.activePromiseTasks.set(nodeId, result);
-
-            return from(result).pipe(
-              catchError(error => {
-                this.logger.logEvent('engine', 'promise-rejected', {
-                  nodeId: nodeId,
-                  error: error instanceof Error ? error.message : String(error),
-                });
-                this.handleComputeError(nodeId, error);
-                return from([null]);
-              }),
-              // 🆕 Remove Promise from tracking when it completes
-              finalize(() => {
-                this.activePromiseTasks.delete(nodeId);
-                this.logger.logEvent('engine', 'promise-completed', {
-                  nodeId: nodeId,
-                  type: def.type,
-                });
-
-                // 🆕 Check deferred hooks
-                this.checkAndEmitPendingSkipComputationHooks();
-              })
-            );
-          }
-
-          return from([result]);
+          return obs.pipe(
+            catchError(error => {
+              this.handleComputeError(nodeId, error);
+              return from([null]);
+            }),
+            finalize(() => {
+              this.activeObservableNodes.delete(nodeId);
+              this.checkAndEmitPendingSkipComputationHooks();
+            })
+          );
         } catch (error) {
           this.handleComputeError(nodeId, error);
           return from([null]);
@@ -2171,7 +1865,6 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       })
     );
 
-    // Subscribe and store
     const sub = pipeline.subscribe(result => {
       subject.next(result);
     });
@@ -2204,8 +1897,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
     const totalSubscriptions = internalSubscriptions + externalSubscriptions + activeDataNodes;
 
-    // 🆕 Account for both cancelable and Promise tasks
-    const totalActiveTasks = this.activeComputations.size + this.activePromiseTasks.size;
+    const totalActiveTasks = this.activeObservableNodes.size;
 
     return {
       timestamp: Date.now(),
@@ -2745,12 +2437,11 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
   }
 
   /**
-   * Emits NODE_SKIP_COMPUTATION hook if there are no active Promise tasks
+   * Emits NODE_SKIP_COMPUTATION hook if there are no active observable tasks
    * Otherwise saves hook for deferred emission
    */
   private emitSkipComputationHookIfReady(nodeId: string): void {
-    if (this.activePromiseTasks.size === 0) {
-      // No active Promises - emit hook immediately
+    if (this.activeObservableNodes.size === 0) {
       this.hookManager.emit(EngineEventType.NODE_SKIP_COMPUTATION, nodeId);
       this.logger.logEvent('engine', 'node-skip-computation', {
         nodeId,
@@ -2758,22 +2449,20 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         activeTasks: 0,
       });
     } else {
-      // Active Promises exist - save for deferred emission
       this.pendingSkipComputationHooks.add(nodeId);
       this.logger.logEvent('engine', 'node-skip-computation-deferred', {
         nodeId,
         engineState: this.state,
-        activeTasks: this.activePromiseTasks.size,
+        activeTasks: this.activeObservableNodes.size,
       });
     }
   }
 
   /**
-   * Checks and emits deferred NODE_SKIP_COMPUTATION hooks
-   * Called when Promise completes
+   * Checks and emits deferred NODE_SKIP_COMPUTATION hooks when observables complete
    */
   private checkAndEmitPendingSkipComputationHooks(): void {
-    if (this.activePromiseTasks.size === 0 && this.pendingSkipComputationHooks.size > 0) {
+    if (this.activeObservableNodes.size === 0 && this.pendingSkipComputationHooks.size > 0) {
       // All Promises completed - emit deferred hooks
       const nodeIds = Array.from(this.pendingSkipComputationHooks);
       this.pendingSkipComputationHooks.clear();

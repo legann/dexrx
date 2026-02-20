@@ -249,9 +249,11 @@ parentPort.on('message', async (message) => {
         // Execute computation using plugin
         let result = plugin.compute(config, inputs);
         
-        // If result is Promise, wait for it to complete
         if (result instanceof Promise) {
           result = await result;
+        } else if (result != null && typeof result.subscribe === 'function') {
+          const { firstValueFrom } = require('rxjs');
+          result = await firstValueFrom(result);
         }
         
         const endTime = process.hrtime.bigint();

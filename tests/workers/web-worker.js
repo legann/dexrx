@@ -242,10 +242,12 @@ self.onmessage = async function(e) {
         console.log(`🧵 Worker ${threadInfo.threadId} starting computation for ${config.id || 'unknown'}`);
         let result = plugin.compute(config, inputs);
         
-        // If result is Promise, wait for it to complete
         if (result instanceof Promise) {
           console.log(`🧵 Worker ${threadInfo.threadId} waiting for async result`);
           result = await result;
+        } else if (result != null && typeof result.subscribe === 'function') {
+          const { firstValueFrom } = await import('rxjs');
+          result = await firstValueFrom(result);
         }
         
         const endTime = performance.now();

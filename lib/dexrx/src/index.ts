@@ -42,7 +42,8 @@ export type { IRuntimeContext } from './types/runtime-context';
 export type { NodeConfig, NodeValue } from './types/utils';
 export { NodeError, SkipInputException } from './utils/node-error';
 
-// Engine Hooks (types only, not EngineEventType if not used)
+// Engine Hooks
+export { EngineEventType } from './types/engine-hooks';
 export type { EngineEventHandlers, UnsubscribeFn } from './types/engine-hooks';
 // ============================================
 // Build API Internal Types

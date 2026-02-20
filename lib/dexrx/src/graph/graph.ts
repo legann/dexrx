@@ -1169,14 +1169,21 @@ export class ExecutableGraph<T = unknown> {
   private updateGraphFromState(state: EngineStateSnapshot): void {
     const nodes = new Map<string, NodeDefinition>();
     const edges = new Map<string, readonly string[]>();
+    const existingNodes = this.graph.nodes;
 
     // Convert state nodes to Build API node definitions
     for (const [nodeId, nodeState] of Object.entries(state.nodes)) {
+      const existing = existingNodes.get(nodeId);
+      const baseConfig = nodeState.config ?? {};
+      const config =
+        existing?.config && (existing.config as Record<string, unknown>).isSubscribed !== undefined
+          ? { ...baseConfig, isSubscribed: (existing.config as Record<string, unknown>).isSubscribed }
+          : baseConfig;
       nodes.set(nodeId, {
         id: nodeState.id,
         type: nodeState.type,
         inputs: nodeState.inputs ?? [],
-        config: nodeState.config ?? {},
+        config,
         // Note: computeFunction is not stored in state, nodes will use plugins from registry
       });
 

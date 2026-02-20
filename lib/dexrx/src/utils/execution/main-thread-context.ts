@@ -1,5 +1,11 @@
+import { firstValueFrom } from 'rxjs';
+import type { Observable } from 'rxjs';
 import { ExecutionContext } from '../../types/execution-context';
 import { NodeRegistry } from '../../engine/registry';
+
+function isObservable(x: unknown): x is Observable<unknown> {
+  return x != null && typeof x === 'object' && typeof (x as { subscribe?: unknown }).subscribe === 'function';
+}
 
 /**
  * Execution context implementation for main thread.
@@ -16,11 +22,8 @@ export class MainThreadContext implements ExecutionContext {
   }
 
   /**
-   * Executes plugin computation in main thread
-   * @param nodeType Node / plugin type
-   * @param config Node configuration
-   * @param inputs Array of input values
-   * @returns Computation result (wrapped in Promise)
+   * Executes plugin computation in main thread.
+   * Plugin returns Observable | value; we return Promise (first value for Observable).
    */
   async execute(nodeType: string, config: unknown, inputs: unknown[]): Promise<unknown> {
     try {
@@ -30,15 +33,14 @@ export class MainThreadContext implements ExecutionContext {
         throw new Error(`Plugin not found: ${nodeType}`);
       }
 
-      // Execute plugin computation directly
       const result = plugin.compute(config as import('../../types/utils').NodeConfig, inputs);
 
-      // If result is already a Promise, return it as is
+      if (isObservable(result)) {
+        return firstValueFrom(result);
+      }
       if (result instanceof Promise) {
         return result;
       }
-
-      // Otherwise wrap in Promise.resolve for interface unification
       return Promise.resolve(result);
     } catch (error) {
       return Promise.reject(error);
