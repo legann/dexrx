@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-02-24
+
+### Summary
+
+Improvements to parallel execution (Node.js) and packaging: least-loaded worker selection, stable worker script path, and clearer documentation of parallel mode behaviour.
+
+### Added
+
+- **Worker script in package:** Packaged worker at `dist/worker.js`, copied during build (`yarn build:worker`). Export `./worker` in `package.json` — use `require.resolve('dexrx/worker')` to get the path.
+- **`engines` in package.json:** `"node": ">=20.0.0"` to declare supported Node version for parallel mode.
+
+### Changed
+
+- **NodeWorkerContext (Node.js):** Worker selection is now **least-loaded** (task is sent to the worker with the fewest pending tasks) instead of random. `pendingTasksByWorker` is used for both tracking and selection.
+- **Worker script resolution:** Lookup order is: packaged `dist/worker.js` (from `utils/execution/`), then `options.workerPath`, then test/dev paths, then inline fallback. Clearer error when no worker script is found.
+- **README:** Short “Parallel Execution” section: limitation (custom plugins not in workers), path resolution, and load balancing (least-loaded in Node, round-robin in browser).
+
+### Fixed
+
+- Worker path for packaged script: resolved as `../../../dist/worker.js` so it works from both source and built `dist` (e.g. ts-jest and production).
+
+---
+
 ## [2.0.0] - 2026-02-20
 
 ### Summary

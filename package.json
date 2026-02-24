@@ -1,11 +1,12 @@
 {
   "name": "dexrx",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "private": true,
   "main": "./lib/dexrx/dist/index.js",
   "types": "./lib/dexrx/dist/index.d.ts",
   "exports": {
     ".": "./lib/dexrx/dist/index.js",
+    "./worker": "./lib/dexrx/dist/worker.js",
     "./package.json": "./package.json"
   },
   "description": "Reactive Graph Engine with parallel execution support",
@@ -18,7 +19,8 @@
     "typescript"
   ],
   "scripts": {
-    "build": "yarn build:cjs && yarn build:esm && yarn build:minify && yarn build:cleanup",
+    "build": "yarn build:cjs && yarn build:esm && yarn build:minify && yarn build:worker && yarn build:cleanup",
+    "build:worker": "node scripts/copy-worker.js",
     "build:cjs": "tsc -p lib/dexrx/tsconfig.cjs.json",
     "build:esm": "tsc -p lib/dexrx/tsconfig.esm.json",
     "build:minify": "node scripts/minify.js",
@@ -70,6 +72,9 @@
     "typedoc": "^0.25.0",
     "webpack": "^5.99.5",
     "esbuild": "^0.19.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "rxjs": "^7.8.0"

@@ -1,4 +1,6 @@
 // Tests for WebWorkerContext (browser tests via Karma)
+// Browser parallel execution uses round-robin worker selection (taskId % workers.length).
+// Node uses least-loaded; see node-worker-context.unit.test.ts.
 import { WebWorkerContext } from '../../lib/dexrx/src/utils/execution/web-worker-context';
 
 // Create mocks for tests in Karma environment
@@ -128,10 +130,10 @@ describe('WebWorkerContext (Browser)', () => {
       });
   }, 8000);
 
-  it('Working with multiple workers', done => {
-    // Create context with multiple workers
+  it('should distribute tasks across workers (round-robin in browser)', done => {
+    // Create context with multiple workers; browser uses round-robin (taskId % workers.length)
     const context = new WebWorkerContext({
-      maxWorkers: 2, // Use 2 workers
+      maxWorkers: 2,
       workerTimeout: 5000,
       workerScriptUrl: workerUrl,
     });

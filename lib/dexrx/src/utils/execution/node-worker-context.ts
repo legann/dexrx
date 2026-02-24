@@ -120,14 +120,18 @@ export class NodeWorkerContext implements ExecutionContext {
         this.workerFilePath = options.workerPath;
         this.logger?.debug(`[NodeWorkerContext] Using worker from options: ${this.workerFilePath}`);
       } else {
-        // Try to find test worker in various ways
+        // Try to find worker script, checking stable package paths first
         const possiblePaths = [
-          // Relative path from current directory
+          // Packaged worker in dist (stable path, works from both src/ and dist/)
+          // From src/utils/execution/ → ../../../dist/worker.js = lib/dexrx/dist/worker.js
+          // From dist/utils/execution/ → ../../../dist/worker.js = lib/dexrx/dist/worker.js
+          path.resolve(__dirname, '../../../dist/worker.js'),
+          // Relative path from current directory (dev/test environments)
           path.resolve(process.cwd(), 'tests/workers/node-worker-script.js'),
           // Absolute path built from __dirname (for dist: ../../../../../tests, for src: ../../../../tests)
           path.resolve(__dirname, '../../../../../tests/workers/node-worker-script.js'),
           path.resolve(__dirname, '../../../../tests/workers/node-worker-script.js'),
-          // Path to file in node_modules directory (for installed library)
+          // Path to file in node_modules directory (for installed library, legacy)
           path.resolve(process.cwd(), 'node_modules/dexrx/tests/workers/node-worker-script.js'),
         ];
 
@@ -136,9 +140,12 @@ export class NodeWorkerContext implements ExecutionContext {
 
         if (existingPath) {
           this.workerFilePath = existingPath;
-          this.logger?.debug(`[NodeWorkerContext] Using test worker: ${this.workerFilePath}`);
+          this.logger?.debug(`[NodeWorkerContext] Using worker: ${this.workerFilePath}`);
         } else {
-          throw new Error('Test worker not found in known paths');
+          throw new Error(
+            'Worker script not found. Run the build step to generate dist/worker.js, ' +
+              'or provide a custom path via options.workerPath.'
+          );
         }
       }
     } catch (e) {
@@ -349,11 +356,20 @@ export class NodeWorkerContext implements ExecutionContext {
         }
 
         this.pendingTasks.delete(message.id);
+
+        // Decrement pending task count for this worker
+        const workerIdx = this.workers.indexOf(worker);
+        if (workerIdx !== -1) {
+          const workerTasks = this.pendingTasksByWorker.get(workerIdx);
+          if (workerTasks) {
+            workerTasks.delete(message.id);
+          }
+        }
       }
     });
 
     worker.on('error', error => {
-      console.error('Worker error:', error);
+      this.logger?.error('Worker error:', error);
 
       // Reject all tasks of this worker
       for (const [taskId, task] of this.pendingTasks.entries()) {
@@ -367,8 +383,17 @@ export class NodeWorkerContext implements ExecutionContext {
         this.pendingTasks.delete(taskId);
       }
 
+      // Clean up pending task tracking for this worker
+      const workerIdx = this.workers.indexOf(worker);
+      if (workerIdx !== -1) {
+        this.pendingTasksByWorker.delete(workerIdx);
+      }
+
       // Remove this worker from list
       this.workers = this.workers.filter(w => w !== worker);
+
+      // Re-index pendingTasksByWorker after removing worker
+      this.reindexWorkerTaskMap();
 
       // Try to create new worker as replacement, if total count allows
       try {
@@ -376,12 +401,46 @@ export class NodeWorkerContext implements ExecutionContext {
           this.createWorker();
         }
       } catch (recreateError) {
-        console.error('Failed to recreate worker after crash:', recreateError);
+        this.logger?.error('Failed to recreate worker after crash:', recreateError);
       }
     });
 
+    const workerIdx = this.workers.length;
     this.workers.push(worker);
+    this.pendingTasksByWorker.set(workerIdx, new Set());
     return worker;
+  }
+
+  /**
+   * Re-indexes pendingTasksByWorker after workers array changes
+   */
+  private reindexWorkerTaskMap(): void {
+    const newMap = new Map<number, Set<string>>();
+    for (let i = 0; i < this.workers.length; i++) {
+      newMap.set(i, new Set());
+    }
+    this.pendingTasksByWorker.clear();
+    for (const [k, v] of newMap) {
+      this.pendingTasksByWorker.set(k, v);
+    }
+  }
+
+  /**
+   * Selects the worker with the fewest pending tasks (least-loaded strategy)
+   */
+  private selectLeastLoadedWorkerIndex(): number {
+    let minLoad = Infinity;
+    let selectedIndex = 0;
+
+    for (let i = 0; i < this.workers.length; i++) {
+      const load = this.pendingTasksByWorker.get(i)?.size ?? 0;
+      if (load < minLoad) {
+        minLoad = load;
+        selectedIndex = i;
+      }
+    }
+
+    return selectedIndex;
   }
 
   // Note: _estimateArraySize method was removed as it was unused
@@ -410,6 +469,10 @@ export class NodeWorkerContext implements ExecutionContext {
         if (task) {
           task.reject(new Error(`Task execution timed out after ${this.taskTimeoutMs}ms`));
           this.pendingTasks.delete(taskId);
+          // Remove from per-worker tracking on timeout
+          for (const workerTasks of this.pendingTasksByWorker.values()) {
+            workerTasks.delete(taskId);
+          }
         }
       }, this.taskTimeoutMs);
 
@@ -420,8 +483,8 @@ export class NodeWorkerContext implements ExecutionContext {
         timeoutId,
       });
 
-      // Select worker with least load (simple strategy - round robin)
-      const workerIndex = Math.floor(Math.random() * this.workers.length);
+      // Select worker with least pending tasks (least-loaded strategy)
+      const workerIndex = this.selectLeastLoadedWorkerIndex();
       const worker = this.workers[workerIndex];
 
       try {
@@ -438,11 +501,15 @@ export class NodeWorkerContext implements ExecutionContext {
           throw new Error('Worker not available');
         }
 
+        // Track this task on the selected worker
+        this.pendingTasksByWorker.get(workerIndex)?.add(taskId);
+
         worker.postMessage(message);
       } catch (error) {
         // In case of error when sending message
         clearTimeout(timeoutId);
         this.pendingTasks.delete(taskId);
+        this.pendingTasksByWorker.get(workerIndex)?.delete(taskId);
         reject(error);
       }
     });

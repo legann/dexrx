@@ -41,7 +41,7 @@ class DefaultNodeWrapper implements NodeWrapper {
       return this.handleOperationalNode(inputs);
     }
 
-    return this.plugin.compute(this.config, inputs) as Observable<unknown> | unknown;
+    return this.plugin.compute(this.config, inputs);
   }
 
   private handleOperationalNode(inputs: readonly unknown[]): Observable<unknown> | unknown {
@@ -49,7 +49,7 @@ class DefaultNodeWrapper implements NodeWrapper {
     if (inputs.some(v => v === SKIP_NODE_EXEC)) {
       throw new SkipInputException(this.config.__runtime?.nodeId ?? 'unknown');
     }
-    return this.plugin.compute(this.config, inputs) as Observable<unknown> | unknown;
+    return this.plugin.compute(this.config, inputs);
   }
 
   destroy(): void {

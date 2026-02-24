@@ -16,6 +16,7 @@ DexRx provides a declarative way to build and orchestrate reactive computation g
 - [Documentation](#documentation)
 - [Build API](#build-api)
 - [Modes](#modes)
+- [Parallel Execution](#parallel-execution)
 - [Node Types](#node-types)
 - [Engine Hooks](#engine-hooks)
 - [Quick Start](#quick-start)
@@ -33,7 +34,7 @@ DexRx provides a declarative way to build and orchestrate reactive computation g
 
 ## Requirements
 
-- **Node.js**: >= 20.0.0
+- **Node.js**: >= 20.0.0 (Worker Threads require Node.js 12+; Node.js 20+ is recommended and tested)
 - **RxJS**: >= 7.8.0 (peer dependency)
 
 ### Tested Compatibility Matrix
@@ -109,6 +110,14 @@ Graph executes once until all computations complete, then stops. Results availab
 Graph runs continuously until stopped. Results via subscription handlers. Supports dynamic updates:
 - `updateGraph()` – When graph structure changes (nodes added/removed, dependencies change)
 - `updateNode()` – When only node config/data changes (e.g., webhook data, operation in plugin changed)
+
+## Parallel Execution
+
+Optional parallel execution via **Worker Threads** (Node.js) or **Web Workers** (browser). Enable with `executionMode: EngineExecutionMode.PARALLEL` in `withOptions()`; configure pool and script via `parallelOptions` (e.g. `maxWorkers`, `workerPath` / `workerScriptUrl`).
+
+- **Limitation:** In parallel mode only plugin types implemented inside the worker script run in workers; custom plugins from the main registry are not transferred (structured clone cannot send functions). Use the built-in worker or supply your own script.
+- **Node.js:** Worker script is resolved in order: `options.workerPath` → packaged `dist/worker.js` (export `dexrx/worker`) → test/dev paths → inline fallback. Load balancing: **least-loaded** (task goes to worker with fewest pending tasks).
+- **Browser:** Worker URL must be provided (`workerScriptUrl`). Load balancing: **round-robin**.
 
 ## Node Types
 

@@ -1,4 +1,4 @@
-// For tests in browser (via Karma)
+// For tests in browser (via Karma). Load balancing: WebWorkerContext uses round-robin (Node uses least-loaded).
 import { createGraph } from '../../lib/dexrx/src/graph';
 import { withNodesConfig, withOptions } from '../../lib/dexrx/src/operators';
 import { WebWorkerContext } from '../../lib/dexrx/src/utils/execution/web-worker-context';
