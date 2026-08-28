@@ -35,6 +35,11 @@ export class MemoryCacheProvider implements ICacheProvider {
       return null;
     }
 
+    // LRU: mark this key as most-recently-used by moving it to the end of the Map
+    // (insertion order = recency; eviction removes the first/oldest key).
+    this.cache.delete(key);
+    this.cache.set(key, item);
+
     this.stats.hits++;
     this.updateHitRatio();
     return item.value as T;
@@ -43,7 +48,8 @@ export class MemoryCacheProvider implements ICacheProvider {
   async set<T>(key: string, value: T, ttl?: number): Promise<void> {
     // Check max size and evict if needed
     if (this.maxSize && this.cache.size >= this.maxSize && !this.cache.has(key)) {
-      // Remove oldest entry (simple FIFO eviction)
+      // Evict the least-recently-used entry: get() moves touched keys to the end, so the
+      // first key is the oldest / least recently used.
       const firstKey = this.cache.keys().next().value;
       if (firstKey) {
         this.cache.delete(firstKey);

@@ -64,25 +64,49 @@ export function createExecutionContext(
   const environment = detectEnvironment();
 
   if (environment === 'browser') {
-    // Browser environment with Web Workers
-    if (!options?.workerScriptUrl) {
-      throw new Error('Worker script URL is required for web workers');
-    }
+    // Browser environment with Web Workers; degrade to main thread when unavailable (W4).
+    try {
+      if (!options?.workerScriptUrl) {
+        throw new Error('Worker script URL is required for web workers');
+      }
 
-    return new WebWorkerContext({
-      maxWorkers: options.maxWorkers ?? 2,
-      workerTimeout: options.workerTimeout ?? 5000,
-      workerScriptUrl: options.workerScriptUrl,
-      logger: options.logger,
-    });
+      return new WebWorkerContext({
+        maxWorkers: options.maxWorkers ?? 2,
+        workerTimeout: options.workerTimeout ?? 5000,
+        workerScriptUrl: options.workerScriptUrl,
+        logger: options.logger,
+      });
+    } catch (error) {
+      if (registry) {
+        options.logger?.warn(
+          `Web Worker context unavailable (${
+            error instanceof Error ? error.message : String(error)
+          }); falling back to main-thread execution.`
+        );
+        return new MainThreadContext(registry);
+      }
+      throw error;
+    }
   } else if (environment === 'node') {
-    // Node.js environment with Worker Threads
-    return new NodeWorkerContext({
-      maxWorkers: options.maxWorkers ?? 2,
-      workerTimeout: options.workerTimeout ?? 5000,
-      workerPath: options.workerPath,
-      logger: options.logger,
-    });
+    // Node.js environment with Worker Threads; degrade to main thread when unavailable (W4).
+    try {
+      return new NodeWorkerContext({
+        maxWorkers: options.maxWorkers ?? 2,
+        workerTimeout: options.workerTimeout ?? 5000,
+        workerPath: options.workerPath,
+        logger: options.logger,
+      });
+    } catch (error) {
+      if (registry) {
+        options.logger?.warn(
+          `Node worker context unavailable (${
+            error instanceof Error ? error.message : String(error)
+          }); falling back to main-thread execution.`
+        );
+        return new MainThreadContext(registry);
+      }
+      throw error;
+    }
   } else {
     // If we can't detect environment or no worker support,
     // use main thread (if registry provided)

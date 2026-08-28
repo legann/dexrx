@@ -18,6 +18,10 @@ export class InputGuardError extends Error {
  * Constant for dangerous pattern
  */
 const dangerousPattern = /[<>"'&;]/;
+// Global variant for sanitizeString().replace() so every dangerous char is stripped, not just
+// the first. A shared /g regex must not be used with .test() (isSafeString) — .test() on a global
+// regex is stateful (lastIndex advances between calls), so the two patterns are kept separate.
+const dangerousPatternGlobal = /[<>"'&;]/g;
 
 /**
  * Service for input data validation and sanitization
@@ -172,7 +176,7 @@ export class InputGuardService implements IInputGuardService {
     let sanitized = value.slice(0, maxLength);
 
     // Replace dangerous characters
-    sanitized = sanitized.replace(dangerousPattern, '');
+    sanitized = sanitized.replace(dangerousPatternGlobal, '');
 
     return sanitized;
   }

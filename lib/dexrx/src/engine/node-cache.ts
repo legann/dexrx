@@ -7,6 +7,26 @@ import {
 } from '../types/cache-types';
 
 /**
+ * BigInt- and circular-safe JSON serializer, used to build a DETERMINISTIC cache-key
+ * fallback when JSON.stringify would throw (a random fallback key was never reproducible).
+ */
+function safeStringify(value: unknown): string {
+  const seen = new WeakSet<object>();
+  return JSON.stringify(value, (_key, val) => {
+    if (typeof val === 'bigint') {
+      return `__bigint__:${val.toString()}`;
+    }
+    if (typeof val === 'object' && val !== null) {
+      if (seen.has(val)) {
+        return '__circular__';
+      }
+      seen.add(val);
+    }
+    return val;
+  });
+}
+
+/**
  * Cache entry
  */
 interface CacheEntry<T = unknown> {
@@ -135,9 +155,12 @@ export class NodeCache implements ICacheProvider {
 
       return cacheKey;
     } catch (error) {
-      // In case of serialization error (e.g., circular references)
-      // generate unique key to avoid collisions
-      return `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+      // Serialization failed (circular refs / BigInt). Build a DETERMINISTIC key with a
+      // cycle- and BigInt-safe serializer so set() and a later get() with the same inputs
+      // produce the same key. A random key was never reproducible: every get() missed and
+      // every set() added a never-hittable entry.
+      const shouldIncludeConfig = this.shouldInvalidateOnConfigChange(nodeId);
+      return shouldIncludeConfig ? safeStringify({ inputs, config }) : safeStringify(inputs);
     }
   }
 

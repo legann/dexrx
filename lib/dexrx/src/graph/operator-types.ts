@@ -143,7 +143,7 @@ export interface UpdateGraphOptions {
   /**
    * Preserve subscription config and handlers if compatible
    * If true, subscriptions from old graph will be applied to new graph
-   * @default false
+   * @default true (preserved unless explicitly set to false)
    */
   preserveSubscriptions?: boolean;
 }

@@ -25,7 +25,7 @@ export { INIT_NODE_EXEC, SKIP_NODE_EXEC } from './types/engine-flags';
 export type { INodeDefinition } from './types/node-definition';
 export type { EngineStateSnapshot, NodeState } from './types/engine-state-snapshot';
 export { EngineState } from './types/engine-state';
-export type { EngineStats } from './types/engine-stats';
+export type { EngineStats, EngineMemoryStats } from './types/engine-stats';
 export { DataNodesExecutionMode, EngineExecutionMode } from './types/engine-options';
 export type { IEngineOptions } from './types/engine-options';
 export type {
@@ -35,7 +35,9 @@ export type {
 export type {
   ICacheProvider as IEngineCacheProvider,
   CacheStats as EngineCacheStats,
+  NodeCacheOptions,
 } from './types/cache-types';
+export { CacheInvalidationStrategy } from './types/cache-types';
 export type { ILogger } from './types/logger';
 export { LogLevel } from './types/logger';
 export type { IRuntimeContext } from './types/runtime-context';
@@ -77,3 +79,8 @@ export { MemoryNotificationProvider } from './providers';
 // Environment (for browser detection, etc.)
 // ============================================
 export { BrowserEnvironmentAdapter } from './utils/environment';
+
+// ============================================
+// Logging utilities
+// ============================================
+export { LoggerManager } from './utils/logging';

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-28
+
+### Added
+
+- `EngineMemoryStats` type export (memory metrics on engine stats).
+- `NodeCacheOptions` type and `CacheInvalidationStrategy` enum exports.
+- `LoggerManager` export from logging utilities.
+
+### Fixed
+
+- Memory leaks in engine state-snapshot getters and graph teardown.
+- Race condition in parallel (Node.js) execution when resuming from imported state.
+- Node worker-pool resilience: error propagation, worker cleanup/respawn, and shutdown handling.
+- Input-guard validation hardened; logging no longer risks emitting secret values.
+
+### Deprecated
+
+- `enableCancelableCompute` engine option is now a no-op (cancellation happens via unsubscribe on input change or node removal); it will be removed in a future major version.
+
+---
+
 ## [2.1.0] - 2026-02-24
 
 ### Summary

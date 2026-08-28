@@ -232,24 +232,23 @@ export class ExecutableGraph<T = unknown> {
       this.engine.importGraph(engineGraph);
     }
 
-    // Import initial state if provided (synchronously via engine.importState)
-    // Note: engine.importState() is async, but we'll handle it by importing before starting
-    // For now, we'll import state and start - if import fails, graph will start fresh
-    if (options?.initialState) {
-      // Import state - fire and forget (will complete asynchronously)
-      // Graph will start immediately, state will be imported in background
-      // This is acceptable because engine.importState() can handle partial imports
-      this.engine.importState(options.initialState, { preserveOptions: true }).catch(() => {
-        // If import fails, continue with fresh start
-        // Graph will start without state
-      });
-    }
-
-    // Start the graph (creates engine if needed, imports graph, starts engine, applies subscriptions)
+    // Start the graph first (fresh), then restore initial state through the long-running
+    // importState() path (pause -> clearAllData -> repopulate -> resume). The previous code
+    // called engine.importState() unawaited BEFORE startInternal, so its clearAllData wiped
+    // the just-imported graph and startInternal raced a half-restored one.
     this.startInternal();
 
     // Mark as long-running graph (enables updateGraph(), pause(), resume(), stop() methods)
     this._isLongRunning = true;
+
+    if (options?.initialState) {
+      // importState() is async; the graph is returned immediately and the restored state
+      // lands shortly after. Surface failures instead of swallowing them silently.
+      void this.importState(options.initialState, { preserveOptions: true }).catch(error => {
+        // eslint-disable-next-line no-console
+        console.error('run(): failed to import initial state:', error);
+      });
+    }
 
     // Graph is now running and will continue to run
     // Subscriptions are active and will emit results through subscription handlers
@@ -487,8 +486,10 @@ export class ExecutableGraph<T = unknown> {
 
     // Process config based on type
     if (typeof config === 'function') {
-      // Check if it's a handler function (nodeId, value, nodeType) or generator (subscribedNodes) => Map
-      if (config.length === 3) {
+      // Handler (nodeId, value[, nodeType]) vs generator (subscribedNodes) => Map. The
+      // generator declares exactly one parameter, so a declared arity >= 2 is unambiguously
+      // a handler; dispatching on === 3 silently dropped 2-param and default-param handlers.
+      if (config.length >= 2) {
         // Handler function: (nodeId, value, nodeType) => void
         // Apply to all subscribed nodes
         for (const node of subscribedNodes) {
@@ -598,12 +599,20 @@ export class ExecutableGraph<T = unknown> {
       return this.engine.exportState(includeMetadata);
     }
 
-    // Otherwise create a new engine only for export
+    // Otherwise create a throwaway engine only for export, then tear it down.
+    // createGraphEngine() assigns this.engine and start() sets it RUNNING; leaving it
+    // running (while this.isRunning stays false) makes a later execute()/run() throw
+    // "Cannot start engine in state: running", so destroy and detach it here.
     const engine = this.createGraphEngine();
     const engineGraph = this.convertToGraphEngineFormat();
     engine.importGraph(engineGraph);
     engine.start();
-    return engine.exportState(includeMetadata);
+    try {
+      return engine.exportState(includeMetadata);
+    } finally {
+      engine.destroy();
+      this.engine = null;
+    }
   }
 
   /**
@@ -618,19 +627,28 @@ export class ExecutableGraph<T = unknown> {
     state: EngineStateSnapshot,
     options?: { preserveOptions?: boolean; validateTypes?: boolean }
   ): Promise<void> {
-    // For long-running graphs: pause, import, resume
+    // For long-running graphs: import into a fresh engine, then start it.
     if (this._isLongRunning && this.isRunning) {
-      const wasRunning = this.isRunning;
-      if (wasRunning && this.engine) {
-        this.engine.pause();
-      }
+      const previousEngine = this.engine;
 
-      // Import state
+      // importStateInternal() builds a FRESH engine from the snapshot and reassigns
+      // this.engine, so the previous engine is orphaned. The old code paused the previous
+      // engine then called resume() on the swapped-in fresh one, which threw
+      // "Cannot resume engine in state: initialized" and left the graph not running.
+      // Instead: tear the old engine down and start() the fresh one (INITIALIZED after import).
       await this.importStateInternal(state, options);
 
-      // Resume if was running
-      if (wasRunning && this.engine) {
-        this.engine.resume();
+      if (previousEngine && previousEngine !== this.engine) {
+        try {
+          previousEngine.destroy();
+        } catch {
+          // Ignore teardown errors on the replaced engine
+        }
+      }
+
+      if (this.engine) {
+        this.engine.start();
+        this.applySubscriptions();
       }
       return;
     }
@@ -718,12 +736,19 @@ export class ExecutableGraph<T = unknown> {
       return this.engine.getStats();
     }
 
-    // Otherwise create a new engine only for getting statistics
+    // Otherwise create a throwaway engine only for stats, then tear it down (see
+    // exportState): leaving it started while this.isRunning stays false breaks a
+    // later execute()/run().
     const engine = this.createGraphEngine();
     const engineGraph = this.convertToGraphEngineFormat();
     engine.importGraph(engineGraph);
     engine.start();
-    return engine.getStats();
+    try {
+      return engine.getStats();
+    } finally {
+      engine.destroy();
+      this.engine = null;
+    }
   }
 
   /**
@@ -827,6 +852,7 @@ export class ExecutableGraph<T = unknown> {
       const currentValues: { [nodeId: string]: unknown } = {};
       let skipComputationReceived = false;
       let stabilityCheck: ReturnType<typeof setInterval> | null = null;
+      let stabilizationTimeout: ReturnType<typeof setTimeout> | null = null;
 
       // Get subscribed nodes from graph definition
       const subscribedNodes = Array.from(this.graph.nodes.values()).filter(
@@ -858,10 +884,14 @@ export class ExecutableGraph<T = unknown> {
             // Unsubscribe from hook
             skipHookUnsubscribe();
 
-            // Clear interval
+            // Clear interval and safety timeout
             if (stabilityCheck) {
               clearInterval(stabilityCheck);
               stabilityCheck = null;
+            }
+            if (stabilizationTimeout) {
+              clearTimeout(stabilizationTimeout);
+              stabilizationTimeout = null;
             }
 
             // Call onDone callback if provided
@@ -944,6 +974,10 @@ export class ExecutableGraph<T = unknown> {
               clearInterval(stabilityCheck);
               stabilityCheck = null;
             }
+            if (stabilizationTimeout) {
+              clearTimeout(stabilizationTimeout);
+              stabilizationTimeout = null;
+            }
 
             // Cleanup subscriptions
             Object.values(nodeObservables).forEach(subscription => {
@@ -970,6 +1004,10 @@ export class ExecutableGraph<T = unknown> {
             clearInterval(stabilityCheck);
             stabilityCheck = null;
           }
+          if (stabilizationTimeout) {
+            clearTimeout(stabilizationTimeout);
+            stabilizationTimeout = null;
+          }
           Object.values(nodeObservables).forEach(subscription => {
             if (subscription && typeof subscription.unsubscribe === 'function') {
               subscription.unsubscribe();
@@ -981,7 +1019,7 @@ export class ExecutableGraph<T = unknown> {
       }, checkInterval);
 
       // Timeout safety
-      setTimeout(() => {
+      stabilizationTimeout = setTimeout(() => {
         if (stabilityCheck) {
           clearInterval(stabilityCheck);
           stabilityCheck = null;
@@ -1297,7 +1335,7 @@ export class ExecutableGraph<T = unknown> {
 
       // Update edges map
       if (nodeDef.inputs && nodeDef.inputs.length > 0) {
-        newEdgesMap.set(nodeDef.id, nodeDef.inputs);
+        newEdgesMap.set(nodeDef.id, [...nodeDef.inputs]);
       }
 
       // Add node to graph
@@ -1421,7 +1459,7 @@ export class ExecutableGraph<T = unknown> {
     // Update edges if inputs changed (create new Map since it's ReadonlyMap)
     const newEdges = new Map(this.graph.edges);
     if (nodeDef.inputs && nodeDef.inputs.length > 0) {
-      newEdges.set(nodeId, nodeDef.inputs);
+      newEdges.set(nodeId, [...nodeDef.inputs]);
     } else {
       newEdges.delete(nodeId);
     }
@@ -1511,9 +1549,24 @@ function convertStateToGraphDefinition(state: EngineStateSnapshot): GraphDefinit
  * Adapter to convert Build API ICacheProvider to graph engine ICacheProvider
  */
 class BuildApiCacheAdapter implements ICacheProvider {
+  private static warned = false;
+
   constructor(
     private readonly buildApiCache: import('../providers/interfaces/cache').ICacheProvider
-  ) {}
+  ) {
+    // Honest placeholder: this adapter does NOT cache (get() returns undefined, set() is a
+    // no-op) because the async Build-API cache cannot satisfy the sync engine cache contract.
+    // Warn once so callers are not misled into thinking withCacheProvider caches compute.
+    if (!BuildApiCacheAdapter.warned) {
+      BuildApiCacheAdapter.warned = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        'withCacheProvider: the Build API cache provider is not wired into engine compute ' +
+          '(this adapter is a placeholder that caches nothing). Call the provider directly ' +
+          'inside your compute functions to cache results.'
+      );
+    }
+  }
 
   get<T = unknown>(_nodeId: string, _cacheKey: string): T | undefined {
     // Build API cache uses async methods, but graph engine API is sync

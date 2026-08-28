@@ -88,7 +88,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --help          Show help"
       echo ""
       echo "Examples:"
-      echo "  $0                          # Full matrix (6 combinations)"
+      echo "  $0                          # Full matrix (4 combinations)"
       echo "  $0 --quick                  # Current Node + all RxJS"
       echo "  $0 --node 20 --rxjs 7.8.0   # Specific combination"
       echo "  $0 --rxjs ^7.8.0            # All Node.js + latest RxJS"

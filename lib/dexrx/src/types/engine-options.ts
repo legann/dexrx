@@ -50,7 +50,10 @@ export interface IEngineOptions {
   throttleTime?: number;
 
   /**
-   * Allow cancellation of previous computing task
+   * Allow cancellation of previous computing task.
+   * @deprecated No-op. Cancellation was removed in the Promise->Observable migration —
+   * a compute is cancelled only by unsubscribe (on input change or node removal). This flag
+   * is still threaded but never consumed, and will be removed in a future major version.
    */
   enableCancelableCompute?: boolean;
 

@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "outDir": "./dist",
     "rootDir": "./src",
     "composite": true,
     "incremental": true,
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo",
     "module": "CommonJS",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "target": "ES2020",
     "lib": ["ES2020", "DOM"],
     "types": ["node"],

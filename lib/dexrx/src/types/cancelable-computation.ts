@@ -1,7 +1,9 @@
 /**
- * Interface for cancelable operation
- * Represents a task that can be cancelled during execution
- * Used in combination with enableCancelableCompute option
+ * Interface for cancelable operation.
+ * @deprecated No longer used. Cancellation was removed in the Promise->Observable migration;
+ * a node's compute returns `Observable<T> | T` and is cancelled by unsubscribe. This type and
+ * the `enableCancelableCompute` option are retained only for backward compatibility and will
+ * be removed in a future major version.
  */
 export interface ICancelableComputation<T = unknown> {
   /**

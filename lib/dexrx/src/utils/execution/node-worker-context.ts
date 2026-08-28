@@ -370,38 +370,22 @@ export class NodeWorkerContext implements ExecutionContext {
 
     worker.on('error', error => {
       this.logger?.error('Worker error:', error);
+      this.removeWorker(worker, 'crashed', error);
+    });
 
-      // Reject all tasks of this worker
-      for (const [taskId, task] of this.pendingTasks.entries()) {
-        // Clear timeout if it was set
-        if (task.timeoutId) {
-          clearTimeout(task.timeoutId);
-        }
-
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        task.reject(new Error(`Worker crashed: ${errorMessage}`));
-        this.pendingTasks.delete(taskId);
+    // W6: a worker that exits without emitting 'error' (clean or non-zero exit) still
+    // must leave the pool, or it lingers as a zombie and keeps being selected.
+    worker.on('exit', code => {
+      if (this.workers.indexOf(worker) !== -1) {
+        this.removeWorker(worker, 'exited', new Error(`exit code ${code}`));
       }
+    });
 
-      // Clean up pending task tracking for this worker
-      const workerIdx = this.workers.indexOf(worker);
-      if (workerIdx !== -1) {
-        this.pendingTasksByWorker.delete(workerIdx);
-      }
-
-      // Remove this worker from list
-      this.workers = this.workers.filter(w => w !== worker);
-
-      // Re-index pendingTasksByWorker after removing worker
-      this.reindexWorkerTaskMap();
-
-      // Try to create new worker as replacement, if total count allows
-      try {
-        if (this.workers.length < this.maxWorkers) {
-          this.createWorker();
-        }
-      } catch (recreateError) {
-        this.logger?.error('Failed to recreate worker after crash:', recreateError);
+    // W6: a message that fails to deserialize would otherwise hang until timeout.
+    worker.on('messageerror', error => {
+      this.logger?.error('Worker messageerror:', error);
+      if (this.workers.indexOf(worker) !== -1) {
+        this.removeWorker(worker, 'message deserialization failed', error);
       }
     });
 
@@ -412,16 +396,80 @@ export class NodeWorkerContext implements ExecutionContext {
   }
 
   /**
-   * Re-indexes pendingTasksByWorker after workers array changes
+   * Removes a dead/stuck worker from the pool: rejects only THAT worker's in-flight
+   * tasks (W2), re-aligns the remaining index->set map without dropping survivors'
+   * loads (W9), and replaces the worker if the pool is below capacity. Idempotent —
+   * a worker already gone (indexOf === -1) is a no-op, so 'error' + 'exit' firing for
+   * the same worker, or an explicit terminate, are deduped.
    */
-  private reindexWorkerTaskMap(): void {
-    const newMap = new Map<number, Set<string>>();
-    for (let i = 0; i < this.workers.length; i++) {
-      newMap.set(i, new Set());
+  private removeWorker(worker: Worker, reason: string, err?: unknown): void {
+    const workerIdx = this.workers.indexOf(worker);
+    if (workerIdx === -1) {
+      return;
+    }
+
+    // Reject only this worker's tasks, not the whole pool.
+    const owned = this.pendingTasksByWorker.get(workerIdx);
+    if (owned) {
+      const detail = err instanceof Error ? err.message : String(err ?? reason);
+      for (const taskId of owned) {
+        const task = this.pendingTasks.get(taskId);
+        if (task) {
+          if (task.timeoutId) {
+            clearTimeout(task.timeoutId);
+          }
+          task.reject(new Error(`Worker ${reason}: ${detail}`));
+          this.pendingTasks.delete(taskId);
+        }
+      }
+    }
+
+    this.workers = this.workers.filter(w => w !== worker);
+    this.reindexAfterRemoval(workerIdx);
+
+    try {
+      if (this.workers.length < this.maxWorkers) {
+        this.createWorker();
+      }
+    } catch (recreateError) {
+      this.logger?.error('Failed to recreate worker:', recreateError);
+    }
+  }
+
+  /**
+   * Terminates a worker and detaches it from the pool immediately (W3). Called when a
+   * task times out: the worker's event loop is likely blocked, so it must stop being
+   * selectable rather than linger with a drained (idle-looking) load.
+   */
+  private terminateAndReplaceWorker(worker: Worker): void {
+    try {
+      worker.terminate().catch(() => {
+        // Ignore — worker may already be terminated
+      });
+    } catch {
+      // Ignore
+    }
+    this.removeWorker(worker, 'terminated (task timeout)');
+  }
+
+  /**
+   * Re-aligns pendingTasksByWorker after the worker at removedIdx left the pool.
+   * Entries below removedIdx keep their index; entries above shift down by one to
+   * match the filtered workers array; the removed index is dropped. Survivors' task
+   * sets are preserved (not reset to empty), so their real load is not lost.
+   */
+  private reindexAfterRemoval(removedIdx: number): void {
+    const compacted = new Map<number, Set<string>>();
+    for (const [idx, set] of this.pendingTasksByWorker) {
+      if (idx < removedIdx) {
+        compacted.set(idx, set);
+      } else if (idx > removedIdx) {
+        compacted.set(idx - 1, set);
+      }
     }
     this.pendingTasksByWorker.clear();
-    for (const [k, v] of newMap) {
-      this.pendingTasksByWorker.set(k, v);
+    for (const [idx, set] of compacted) {
+      this.pendingTasksByWorker.set(idx, set);
     }
   }
 
@@ -455,9 +503,17 @@ export class NodeWorkerContext implements ExecutionContext {
     // this.shouldParallelizeTask(nodeType, config, inputs)
 
     return new Promise((resolve, reject) => {
-      // If all workers are down, execute in main thread
+      // If all workers are down, execute cannot proceed
       if (this.workers.length === 0) {
         reject(new Error('No available workers for parallel execution'));
+        return;
+      }
+
+      // Select the worker first so the timeout can terminate the exact stuck worker (W3)
+      const workerIndex = this.selectLeastLoadedWorkerIndex();
+      const worker = this.workers[workerIndex];
+      if (!worker) {
+        reject(new Error('Worker not available'));
         return;
       }
 
@@ -467,12 +523,15 @@ export class NodeWorkerContext implements ExecutionContext {
       const timeoutId = setTimeout(() => {
         const task = this.pendingTasks.get(taskId);
         if (task) {
-          task.reject(new Error(`Task execution timed out after ${this.taskTimeoutMs}ms`));
           this.pendingTasks.delete(taskId);
           // Remove from per-worker tracking on timeout
           for (const workerTasks of this.pendingTasksByWorker.values()) {
             workerTasks.delete(taskId);
           }
+          task.reject(new Error(`Task execution timed out after ${this.taskTimeoutMs}ms`));
+          // W3: a timed-out task means the worker's event loop is likely blocked and
+          // cannot post a result; terminate and replace it so it stops attracting work.
+          this.terminateAndReplaceWorker(worker);
         }
       }, this.taskTimeoutMs);
 
@@ -483,10 +542,6 @@ export class NodeWorkerContext implements ExecutionContext {
         timeoutId,
       });
 
-      // Select worker with least pending tasks (least-loaded strategy)
-      const workerIndex = this.selectLeastLoadedWorkerIndex();
-      const worker = this.workers[workerIndex];
-
       try {
         // Send task to worker
         const message: WorkerMessage = {
@@ -496,10 +551,6 @@ export class NodeWorkerContext implements ExecutionContext {
           config,
           inputs,
         };
-
-        if (!worker) {
-          throw new Error('Worker not available');
-        }
 
         // Track this task on the selected worker
         this.pendingTasksByWorker.get(workerIndex)?.add(taskId);

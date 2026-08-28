@@ -61,7 +61,7 @@ export function withNodes(nodes: INodeDefinition[]): GraphOperator {
       // Update edges map
       const edges = new Map(currentGraph.edges);
       if (nodeDef.inputs && nodeDef.inputs.length > 0) {
-        edges.set(nodeDef.id, nodeDef.inputs);
+        edges.set(nodeDef.id, [...nodeDef.inputs]);
       }
 
       // Add node to graph

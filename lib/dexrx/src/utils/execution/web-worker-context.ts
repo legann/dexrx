@@ -92,7 +92,7 @@ export class WebWorkerContext implements ExecutionContext {
   private handleWorkerMessage(e: MessageEvent): void {
     const message = e.data as WorkerTaskMessage;
 
-    if (!message?.taskId || !this.taskQueue.has(message.taskId)) {
+    if (message?.taskId == null || !this.taskQueue.has(message.taskId)) {
       return;
     }
 
@@ -366,14 +366,22 @@ export class WebWorkerContext implements ExecutionContext {
         timeout,
       });
 
-      // Send message to worker
-      worker.postMessage({
-        type: 'execute',
-        taskId,
-        nodeType,
-        config,
-        inputs,
-      } as WorkerTaskMessage);
+      // Send message to worker. Guard against a synchronous DataCloneError (non-cloneable
+      // config/inputs): clean up the timer and queue entry instead of leaking them until
+      // the timeout fires (mirrors the Node path).
+      try {
+        worker.postMessage({
+          type: 'execute',
+          taskId,
+          nodeType,
+          config,
+          inputs,
+        } as WorkerTaskMessage);
+      } catch (error) {
+        clearTimeout(timeout);
+        this.taskQueue.delete(taskId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 

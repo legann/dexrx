@@ -40,6 +40,7 @@ import { ExecutionContext } from '../types/execution-context';
 import { createExecutionContext } from '../utils/execution';
 import { LoggerManager } from '../utils/logging';
 import { ConsoleLoggerAdapter } from '../utils/logging/console-logger-adapter';
+import { LoggerAdapter } from '../utils/logging/logger-adapter';
 import { IInputGuardService } from '../types/input-guard';
 import { InputGuardService } from '../utils/input-guard/input-guard-service';
 import { EngineEventHandlers, EngineEventType, UnsubscribeFn } from '../types/engine-hooks';
@@ -137,6 +138,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
   private readonly pausedSubscriptions = new Map<string, Subscription>();
   private readonly nodesToUpdateOnResume = new Map<string, INodeDefinition>();
   private statLoggingInterval: ReturnType<typeof setInterval> | null = null;
+  // Timer that replays deferred updates after resume(); tracked so teardown can cancel it.
+  private resumeUpdateTimer: ReturnType<typeof setTimeout> | null = null;
   private startTime = Date.now();
   private readonly engineId: string;
   private errorCount = 0;
@@ -168,8 +171,19 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       loggerManager.setLogger(options.logger);
     }
 
-    // Create logger for engine
-    this.logger = new ConsoleLoggerAdapter();
+    // Engine's own structured logs need the ConsoleLoggerAdapter API (logEvent). Use the
+    // injected logger directly when it provides that API, so its level actually controls
+    // engine output; for another LoggerAdapter mirror its level onto a console adapter;
+    // otherwise fall back to a default adapter. (Previously options.logger only reached
+    // LoggerManager and the engine kept a private, uncontrollable INFO adapter.)
+    if (options.logger instanceof ConsoleLoggerAdapter) {
+      this.logger = options.logger;
+    } else if (options.logger instanceof LoggerAdapter) {
+      this.logger = new ConsoleLoggerAdapter();
+      this.logger.setLevel(options.logger.getLevel());
+    } else {
+      this.logger = new ConsoleLoggerAdapter();
+    }
 
     // Log engine creation with extended information
     this.logger.logEvent('engine', 'creation', {
@@ -268,27 +282,54 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
     }
   }
 
-  private detectCycle(startId: string, visited: Set<string> = new Set()): boolean {
+  /**
+   * Structural equality used by distinctUntilChanged. JSON.stringify throws on BigInt and
+   * on circular references; on such inputs treat the values as changed (emit) rather than
+   * letting the comparator throw and terminate the node's subscription.
+   */
+  private safeJsonEqual(a: unknown, b: unknown): boolean {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
+  }
+
+  private detectCycle(
+    startId: string,
+    visited: Set<string> = new Set(),
+    safe: Set<string> = new Set()
+  ): boolean {
     // If node was already visited in current path, it's a cycle
     if (visited.has(startId)) {
       return true;
     }
 
-    // Add node to visited list
+    // Already proven acyclic on another branch of this traversal — skip re-walking it.
+    // `visited` is the current DFS path (shared, with backtracking) and `safe` memoizes
+    // fully-explored acyclic nodes, so a reconvergent (diamond) node is walked once, not
+    // once per path — O(V+E) instead of exponential.
+    if (safe.has(startId)) {
+      return false;
+    }
+
+    // Add node to the current path
     visited.add(startId);
 
     // Get node definition
     const def = this.defs.get(startId);
     if (!def?.inputs?.length) {
-      // Node without inputs cannot create cycle
+      // Node without inputs cannot create a cycle
+      visited.delete(startId);
+      safe.add(startId);
       return false;
     }
 
     // Check all node inputs
     for (const inputId of def.inputs) {
-      // If input node was already visited in current path or itself contains cycle,
-      // then current node is also part of cycle
-      if (visited.has(inputId) || this.detectCycle(inputId, new Set(visited))) {
+      // If input node is already on the current path or itself contains a cycle,
+      // then the current node is also part of a cycle
+      if (visited.has(inputId) || this.detectCycle(inputId, visited, safe)) {
         this.logger.logEvent('engine', 'cycle-detection', {
           startNodeId: startId,
           cycleNodeId: inputId,
@@ -297,7 +338,9 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       }
     }
 
-    // If no input created cycle, node is not part of cycle
+    // No input created a cycle: leave the current path and mark this node acyclic
+    visited.delete(startId);
+    safe.add(startId);
     return false;
   }
 
@@ -602,7 +645,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         // Apply optional distinctUntilChanged
         if (this.options.distinctValues) {
           inputPipeline = inputPipeline.pipe(
-            distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
+            distinctUntilChanged((prev, curr) => this.safeJsonEqual(prev, curr))
           );
         }
 
@@ -642,14 +685,22 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         );
 
         // Subscribe and store subscription
-        const sub = pipeline.subscribe(result => {
-          this.logger.logEvent('engine', 'node-value-update', {
-            nodeId: sanitizedDef.id,
-            hasValue: result !== null && result !== undefined,
-            valueType: typeof result,
-            isPromise: result instanceof Promise,
-          });
-          subject.next(result);
+        const sub = pipeline.subscribe({
+          next: result => {
+            this.logger.logEvent('engine', 'node-value-update', {
+              nodeId: sanitizedDef.id,
+              hasValue: result !== null && result !== undefined,
+              valueType: typeof result,
+              isPromise: result instanceof Promise,
+            });
+            subject.next(result);
+          },
+          error: error => {
+            // Guard the terminal subscription: an error on the outer stream would otherwise
+            // go unhandled and permanently stop this node.
+            this.handleComputeError(sanitizedDef.id, error);
+            subject.next(null);
+          },
         });
 
         this.subscriptions.set(sanitizedDef.id, sub);
@@ -830,7 +881,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
         if (this.options.distinctValues) {
           inputPipeline = inputPipeline.pipe(
-            distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
+            distinctUntilChanged((prev, curr) => this.safeJsonEqual(prev, curr))
           );
         }
 
@@ -861,14 +912,20 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         );
 
         // Subscribe and store subscription
-        const sub = pipeline.subscribe(result => {
-          this.logger.logEvent('engine', 'node-value-update', {
-            nodeId: id,
-            hasValue: result !== null && result !== undefined,
-            valueType: typeof result,
-            isPromise: result instanceof Promise,
-          });
-          oldSubject.next(result);
+        const sub = pipeline.subscribe({
+          next: result => {
+            this.logger.logEvent('engine', 'node-value-update', {
+              nodeId: id,
+              hasValue: result !== null && result !== undefined,
+              valueType: typeof result,
+              isPromise: result instanceof Promise,
+            });
+            oldSubject.next(result);
+          },
+          error: error => {
+            this.handleComputeError(id, error);
+            oldSubject.next(null);
+          },
         });
 
         this.subscriptions.set(id, sub);
@@ -969,10 +1026,11 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       // Return Observable tracking external subscriptions
       const subject = this.subjects.get(id);
       if (subject) {
-        this.externalSubscriptionsCount++;
-
-        // Wrap original Observable for subscription tracking
+        // Wrap original Observable for subscription tracking. Increment inside the subscribe
+        // factory (symmetric with the teardown decrement) so calling observeNode without
+        // subscribing, or subscribing more than once, keeps the counter accurate.
         return new Observable<T>(observer => {
+          this.externalSubscriptionsCount++;
           const subscription = (subject.asObservable() as Observable<T>).subscribe(observer);
 
           // On unsubscribe decrease counter
@@ -984,6 +1042,57 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       }
 
       return undefined;
+    }
+  }
+
+  /**
+   * Releases process-level and runtime resources shared by stop() and destroy():
+   * the cache-cleanup timer, stats timer, deferred-resume timer, execution context
+   * (workers), and the process exit handler. Each field is guarded, so calling this
+   * from stop() and again from a later destroy() frees each resource exactly once.
+   */
+  private releaseRuntimeResources(): void {
+    if (this.cacheCleanupInterval) {
+      clearInterval(this.cacheCleanupInterval);
+      this.cacheCleanupInterval = null;
+    }
+    if (this.statLoggingInterval) {
+      clearInterval(this.statLoggingInterval);
+      this.statLoggingInterval = null;
+    }
+    if (this.resumeUpdateTimer) {
+      clearTimeout(this.resumeUpdateTimer);
+      this.resumeUpdateTimer = null;
+    }
+    if (this.executionContext) {
+      try {
+        this.executionContext.terminate();
+        // NodeWorkerContext exposes waitForTermination; fire-and-forget so teardown does not block.
+        const contextWithWait = this.executionContext as ExecutionContext & {
+          waitForTermination?: (timeoutMs: number) => Promise<void>;
+        };
+        if (typeof contextWithWait.waitForTermination === 'function') {
+          contextWithWait.waitForTermination(1000).catch(() => {
+            // Ignore errors
+          });
+        }
+        this.logger.logEvent('engine', 'execution-context-terminated', {
+          type: this.executionContext.constructor.name,
+        });
+      } catch (error) {
+        this.logger.logEvent('engine', 'execution-context-error', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this.logger.inputGuardError(
+          'Error releasing execution context',
+          error instanceof Error ? error : undefined
+        );
+      }
+      this.executionContext = undefined;
+    }
+    if (this.exitHandlerUnsubscribe) {
+      this.exitHandlerUnsubscribe();
+      this.exitHandlerUnsubscribe = null;
     }
   }
 
@@ -1010,49 +1119,12 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       activeTasksCount: this.activeObservableNodes.size,
     });
 
-    // Clear cache cleanup timer if it was set
-    if (this.cacheCleanupInterval) {
-      clearInterval(this.cacheCleanupInterval);
-      this.cacheCleanupInterval = null;
-    }
-
-    // Clear statistics logging timer
-    if (this.statLoggingInterval) {
-      clearInterval(this.statLoggingInterval);
-      this.statLoggingInterval = null;
-    }
-
     // Log engine destruction
     this.logger.inputGuardWarn(`Destroying ReactiveGraphEngine with ${this.defs.size} nodes`, true);
 
-    // Close execution context if it exists
-    if (this.executionContext) {
-      try {
-        this.executionContext.terminate();
-        // If execution context has waitForTermination method (NodeWorkerContext), wait for workers to close
-        const contextWithWait = this.executionContext as ExecutionContext & {
-          waitForTermination?: (timeoutMs: number) => Promise<void>;
-        };
-        if (typeof contextWithWait.waitForTermination === 'function') {
-          // Fire and forget - don't block destroy(), but ensure workers close
-          contextWithWait.waitForTermination(1000).catch(() => {
-            // Ignore errors
-          });
-        }
-        this.logger.logEvent('engine', 'execution-context-terminated', {
-          type: this.executionContext.constructor.name,
-        });
-      } catch (error) {
-        this.logger.logEvent('engine', 'execution-context-error', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        this.logger.inputGuardError(
-          'Error releasing execution context',
-          error instanceof Error ? error : undefined
-        );
-      }
-      this.executionContext = undefined;
-    }
+    // Release timers, execution context (workers) and the exit handler. Shared with
+    // stop() so a destroy() after stop() is no longer a leaky no-op.
+    this.releaseRuntimeResources();
 
     this.activeObservableNodes.clear();
 
@@ -1102,12 +1174,6 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
     // Clear all hooks
     this.hookManager.clearAllEvents();
-
-    // Unsubscribe from exit events
-    if (this.exitHandlerUnsubscribe) {
-      this.exitHandlerUnsubscribe();
-      this.exitHandlerUnsubscribe = null;
-    }
   }
 
   /**
@@ -1573,11 +1639,9 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
     this.cancelAllSubscriptions();
     this.cancelAllTasks();
 
-    // Clear statistics logging timer
-    if (this.statLoggingInterval) {
-      clearInterval(this.statLoggingInterval);
-      this.statLoggingInterval = null;
-    }
+    // Release timers, execution context (workers) and the exit handler. stop() is
+    // terminal (it sets DESTROYED), so it must free the same resources as destroy().
+    this.releaseRuntimeResources();
 
     this.state = EngineState.DESTROYED;
 
@@ -1709,11 +1773,24 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       const updates = [...this.nodesToUpdateOnResume.entries()];
       this.nodesToUpdateOnResume.clear();
 
-      // Give small delay before applying updates
-      setTimeout(() => {
+      // Give small delay before applying updates. Track the timer so teardown can
+      // cancel it, and guard the callback so a resume()->destroy() race cannot throw
+      // "Cannot update node in destroyed engine" from an untracked timer.
+      this.resumeUpdateTimer = setTimeout(() => {
+        this.resumeUpdateTimer = null;
+        if (this.state === EngineState.DESTROYED || this.state === EngineState.STOPPING) {
+          return;
+        }
         for (const [nodeId, nodeDef] of updates) {
-          this.logger.logEvent('engine', 'apply-deferred-update', { nodeId });
-          this.updateNode(nodeId, nodeDef);
+          try {
+            this.logger.logEvent('engine', 'apply-deferred-update', { nodeId });
+            this.updateNode(nodeId, nodeDef);
+          } catch (error) {
+            this.logger.logEvent('engine', 'apply-deferred-update-error', {
+              nodeId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       }, 10);
     }
@@ -1837,7 +1914,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
     if (this.options.distinctValues) {
       inputPipeline = inputPipeline.pipe(
-        distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr))
+        distinctUntilChanged((prev, curr) => this.safeJsonEqual(prev, curr))
       );
     }
 
@@ -1867,8 +1944,14 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       })
     );
 
-    const sub = pipeline.subscribe(result => {
-      subject.next(result);
+    const sub = pipeline.subscribe({
+      next: result => {
+        subject.next(result);
+      },
+      error: error => {
+        this.handleComputeError(nodeId, error);
+        subject.next(null);
+      },
     });
 
     this.subscriptions.set(nodeId, sub);
@@ -2050,6 +2133,13 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       includeMetadata,
     });
 
+    // Per-node error count from last execution history (so exported state reflects which nodes had errors)
+    const nodeErrorCounts = new Map<string, number>();
+    for (const entry of this.errorHistoryLastExecution) {
+      const n = nodeErrorCounts.get(entry.nodeId) ?? 0;
+      nodeErrorCounts.set(entry.nodeId, n + 1);
+    }
+
     // Collect node states
     const nodes: Record<string, NodeState> = {};
 
@@ -2082,7 +2172,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         inputs: nodeDef.inputs ?? [],
         config: cleanConfig,
         currentValue: serializeValue(subject.getValue()), // Convert Symbol to strings
-        errorCount: 0, // Get from node if available
+        errorCount: nodeErrorCounts.get(nodeId) ?? 0,
         cacheData: nodeCacheData,
       };
 
@@ -2279,7 +2369,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
             this.logger.logEvent('engine', 'state-value-restored', {
               nodeId,
-              value: restoredValue as import('../types/utils').Serializable,
+              hasValue: restoredValue !== null && restoredValue !== undefined,
               valueType: typeof restoredValue,
               isINIT_NODE_EXEC: restoredValue === INIT_NODE_EXEC,
               isSKIP_NODE_EXEC: restoredValue === SKIP_NODE_EXEC,
