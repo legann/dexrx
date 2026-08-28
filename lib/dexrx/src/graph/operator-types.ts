@@ -62,6 +62,8 @@ export interface NodeDefinition {
   readonly inputs: readonly string[];
   readonly config: NodeConfig;
   readonly computeFunction?: ComputeFunction;
+  /** Control-channel targets owned by this node (see INodeDefinition.controls). */
+  readonly controls?: readonly string[];
 }
 
 /**

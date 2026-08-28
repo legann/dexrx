@@ -43,6 +43,23 @@ export interface LongRunningGraph<T = unknown> extends ExecutableGraph<T> {
   updateNode(nodeId: string, nodeDef: INodeDefinition): void;
 
   /**
+   * Triggering control: schedules a config-delta update that recomputes the node
+   * immediately. Deferred to a macrotask (safe to call from subscription handlers);
+   * calls within `minIntervalMs` coalesce into one trailing update (runaway guard).
+   * Rewrites the base config — for tick-paced adaptation use the non-triggering
+   * control channel (`controls` / `__setControl`) instead.
+   *
+   * The delta lives in the ENGINE's node definition (exportState reflects it);
+   * the Build API's own node copy keeps the original config, so a later
+   * updateGraph()-driven rebuild starts from the base config.
+   */
+  requestConfigUpdate(
+    nodeId: string,
+    delta: Record<string, unknown>,
+    options?: { minIntervalMs?: number }
+  ): void;
+
+  /**
    * Pause graph execution
    * Only available for long-running graphs
    */
@@ -103,7 +120,30 @@ export function createGraph<T = unknown>(
     graph = operator(graph);
   }
 
+  // Validate control-channel targets against the COMPLETED composition (controls may
+  // point at any node regardless of the operator that added it). Static typo guard;
+  // imperative __setControl targets stay dynamic by design.
+  validateControlTargets(graph.nodes.values(), id => graph.nodes.has(id));
+
   return new ExecutableGraph<T>(graph);
+}
+
+/**
+ * Shared control-target existence check: every declared control target must exist in
+ * the node set. Used by createGraph finalization and updateGraph's rebuild — keep the
+ * two call sites on one rule.
+ */
+function validateControlTargets(
+  nodes: Iterable<{ readonly id: string; readonly controls?: readonly string[] }>,
+  has: (id: string) => boolean
+): void {
+  for (const node of nodes) {
+    for (const targetId of node.controls ?? []) {
+      if (!has(targetId)) {
+        throw new Error(`Control target '${targetId}' not found for controller '${node.id}'`);
+      }
+    }
+  }
 }
 
 /**
@@ -377,6 +417,7 @@ export class ExecutableGraph<T = unknown> {
         id: node.id,
         type: pluginType,
         inputs: node.inputs.length > 0 ? [...node.inputs] : undefined,
+        controls: node.controls ? [...node.controls] : undefined,
         config,
       };
 
@@ -1222,6 +1263,7 @@ export class ExecutableGraph<T = unknown> {
         type: nodeState.type,
         inputs: nodeState.inputs ?? [],
         config,
+        controls: nodeState.controls ? [...nodeState.controls] : undefined,
         // Note: computeFunction is not stored in state, nodes will use plugins from registry
       });
 
@@ -1331,6 +1373,7 @@ export class ExecutableGraph<T = unknown> {
         type: nodeDef.type,
         inputs: nodeDef.inputs ? [...nodeDef.inputs] : [],
         config: { ...nodeDef.config },
+        controls: nodeDef.controls ? [...nodeDef.controls] : undefined,
       };
 
       // Update edges map
@@ -1341,6 +1384,10 @@ export class ExecutableGraph<T = unknown> {
       // Add node to graph
       newNodesMap.set(nodeDef.id, node);
     }
+
+    // Validate control-channel targets against the full new node set (controls may
+    // point anywhere, so this runs after all nodes are collected)
+    validateControlTargets(sortedNodes, id => newNodesMap.has(id));
 
     // 5. Create new GraphDefinition with new nodes but same infrastructure
     // For long-running graphs, preserve subscriptions by default (unless explicitly disabled)
@@ -1435,23 +1482,29 @@ export class ExecutableGraph<T = unknown> {
       };
     }
 
-    // Convert to engine format
+    // Convert to engine format. controls: keep the existing controller role when the
+    // caller omits it (consistent with the type-stability rule above); an explicit
+    // `controls: []` clears the role deliberately.
+    const resolvedControls = nodeDef.controls ?? existingNode.controls;
     const pluginType = existingNode.computeFunction ? `build-api-${nodeId}` : nodeDef.type;
     const engineNodeDef: INodeDefinition = {
       id: nodeId,
       type: pluginType,
       inputs: nodeDef.inputs && nodeDef.inputs.length > 0 ? [...nodeDef.inputs] : undefined,
+      controls: resolvedControls ? [...resolvedControls] : undefined,
       config,
     };
 
     // Update node in engine (preserves Subject, recreates wrapper and subscriptions)
     this.engine.updateNode(nodeId, engineNodeDef);
 
-    // Update node in graph.nodes for consistency (create new Map since it's ReadonlyMap)
+    // Update node in graph.nodes for consistency (create new Map since it's ReadonlyMap).
+    // controls uses the SAME resolved value as the engine def so the models stay in sync.
     const updatedNode: NodeDefinition = {
       ...existingNode,
       inputs: nodeDef.inputs ? [...nodeDef.inputs] : [],
       config: { ...nodeDef.config },
+      controls: resolvedControls ? [...resolvedControls] : undefined,
     };
     const newNodes = new Map(this.graph.nodes);
     newNodes.set(nodeId, updatedNode);
@@ -1470,6 +1523,29 @@ export class ExecutableGraph<T = unknown> {
       nodes: newNodes,
       edges: newEdges,
     };
+  }
+
+  requestConfigUpdate(
+    nodeId: string,
+    delta: Record<string, unknown>,
+    options?: { minIntervalMs?: number }
+  ): void {
+    if (!this._isLongRunning) {
+      throw new Error(
+        'requestConfigUpdate() is only available for long-running graphs. Use run() instead of execute().'
+      );
+    }
+    if (this.isDestroyed) {
+      throw new Error('Cannot update node in destroyed graph');
+    }
+    if (!this.engine) {
+      throw new Error('Engine not initialized. Call run() first.');
+    }
+    if (!this.graph.nodes.has(nodeId)) {
+      throw new Error(`Node '${nodeId}' not found in graph`);
+    }
+
+    this.engine.requestConfigUpdate(nodeId, delta, options);
   }
 
   /**
@@ -1532,6 +1608,7 @@ function convertStateToGraphDefinition(state: EngineStateSnapshot): GraphDefinit
       type: nodeState.type,
       inputs: nodeState.inputs ?? [],
       config: nodeState.config ?? {},
+      controls: nodeState.controls ? [...nodeState.controls] : undefined,
       // Note: computeFunction is lost during state export
       // This would need to be restored from original graph definition
     });

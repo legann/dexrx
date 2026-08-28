@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-28
+
+### Summary
+
+Control channel for long-running graphs: a controller node declares `controls: [targetIds]` and pushes config deltas into its targets. Non-triggering by default — the delta applies on the target's next compute; `requestConfigUpdate` recomputes immediately. The data DAG stays acyclic. Graphs without `controls` behave identically.
+
+### Added
+
+- **Control channel** — `controls` on node definitions, control-slots, broadcast/addressed routing, `requestConfigUpdate`. See “Control Channel” in the README.
+
+### Changed
+
+- `__`-prefixed config keys are reserved and stripped on export.
+- `exportGraph()` strips runtime fields; `removeNode()` detaches the removed id from `controls`.
+
+---
+
 ## [2.2.0] - 2026-08-28
 
 ### Added

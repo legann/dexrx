@@ -9,6 +9,7 @@ export interface NodeState {
   readonly id: string;
   readonly type: string;
   readonly inputs: readonly string[];
+  readonly controls?: readonly string[];
   readonly config?: NodeConfig;
   readonly currentValue?: NodeValue;
   readonly lastComputeTime?: number;
@@ -28,5 +29,11 @@ export interface EngineStateSnapshot {
   readonly options: Readonly<Record<string, unknown>>;
   readonly stats: EngineStats;
   readonly nodes: Readonly<Record<string, NodeState>>;
+  /**
+   * Control-channel slots at export time (target id -> merged delta). Restored
+   * directly on import: with addressed routing the controller's last payload may
+   * cover only a subset of targets, so replaying it alone would lose slots.
+   */
+  readonly controlSlots?: Readonly<Record<string, NodeConfig>>;
   readonly metadata?: Readonly<Record<string, Serializable>>;
 }

@@ -1,6 +1,6 @@
 {
   "name": "dexrx",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "main": "./lib/dexrx/dist/index.js",
   "types": "./lib/dexrx/dist/index.d.ts",

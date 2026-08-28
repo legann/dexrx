@@ -26,30 +26,54 @@ interface RuntimeConfig extends NodeConfig {
 }
 
 /**
+ * Reader for the node's control-slot: the latest config delta pushed by a
+ * controller. Returns undefined when nothing has been pushed.
+ */
+export type ControlReader = () => NodeConfig | undefined;
+
+/**
+ * Overlays the control-slot delta on the captured base config.
+ * Empty slot returns the base config unchanged (same reference), so nodes
+ * without controllers pay nothing. The base is never mutated.
+ */
+function withControlOverlay(config: RuntimeConfig, getControl?: ControlReader): RuntimeConfig {
+  const slot = getControl?.();
+  if (!slot || Object.keys(slot).length === 0) {
+    return config;
+  }
+  return { ...config, ...slot };
+}
+
+/**
  * Wrapper for node executing in main thread
  */
 class DefaultNodeWrapper implements NodeWrapper {
   constructor(
     private readonly plugin: INodePlugin,
-    private readonly config: RuntimeConfig
+    private readonly config: RuntimeConfig,
+    private readonly getControl?: ControlReader
   ) {}
 
   compute(inputs: readonly unknown[]): Observable<unknown> | unknown {
+    const effectiveConfig = withControlOverlay(this.config, this.getControl);
     const category = this.plugin.category ?? this.config.__runtime?.category;
 
     if (category === 'operational') {
-      return this.handleOperationalNode(inputs);
+      return this.handleOperationalNode(effectiveConfig, inputs);
     }
 
-    return this.plugin.compute(this.config, inputs);
+    return this.plugin.compute(effectiveConfig, inputs);
   }
 
-  private handleOperationalNode(inputs: readonly unknown[]): Observable<unknown> | unknown {
+  private handleOperationalNode(
+    effectiveConfig: RuntimeConfig,
+    inputs: readonly unknown[]
+  ): Observable<unknown> | unknown {
     // Inputs are already resolved by the pipeline (mergeMap(Promise.all(values)))
     if (inputs.some(v => v === SKIP_NODE_EXEC)) {
       throw new SkipInputException(this.config.__runtime?.nodeId ?? 'unknown');
     }
-    return this.plugin.compute(this.config, inputs);
+    return this.plugin.compute(effectiveConfig, inputs);
   }
 
   destroy(): void {
@@ -68,7 +92,8 @@ class ParallelNodeWrapper implements NodeWrapper {
   constructor(
     private readonly nodeType: string,
     private readonly config: RuntimeConfig,
-    private readonly executionContext: ExecutionContext
+    private readonly executionContext: ExecutionContext,
+    private readonly getControl?: ControlReader
   ) {}
 
   compute(inputs: readonly unknown[]): Promise<unknown> | Observable<unknown> | unknown {
@@ -79,8 +104,17 @@ class ParallelNodeWrapper implements NodeWrapper {
         throw new SkipInputException(this.config.__runtime?.nodeId ?? 'unknown');
       }
     }
+    // The config crosses a worker postMessage boundary: the injected control
+    // writers are functions — not structured-cloneable, they would fail EVERY
+    // compute with DataCloneError. Strip them here — imperative pushes are
+    // main-thread-only (the plan confines stateful controllers to SERIAL anyway).
+    let effectiveConfig = withControlOverlay(this.config, this.getControl);
+    if ('__setControl' in effectiveConfig || '__requestConfigUpdate' in effectiveConfig) {
+      const { __setControl, __requestConfigUpdate, ...serializable } = effectiveConfig;
+      effectiveConfig = serializable;
+    }
     // Execution context returns Promise (worker uses firstValueFrom(observable) internally)
-    return this.executionContext.execute(this.nodeType, this.config, inputs);
+    return this.executionContext.execute(this.nodeType, effectiveConfig, inputs);
   }
 
   destroy(): void {
@@ -93,18 +127,20 @@ class ParallelNodeWrapper implements NodeWrapper {
  * @param plugin Node plugin
  * @param config Node configuration
  * @param executionContext Optional execution context for parallel mode
+ * @param getControl Optional reader for the node's control-slot (overlaid on config per compute)
  * @returns Node wrapper
  */
 export function createNodeWrapper(
   plugin: INodePlugin,
   config: NodeConfig,
-  executionContext?: ExecutionContext
+  executionContext?: ExecutionContext,
+  getControl?: ControlReader
 ): NodeWrapper {
   // If execution context is provided, use parallel wrapper
   if (executionContext) {
-    return new ParallelNodeWrapper(plugin.type, config as RuntimeConfig, executionContext);
+    return new ParallelNodeWrapper(plugin.type, config as RuntimeConfig, executionContext, getControl);
   }
 
   // Otherwise use default wrapper for main thread
-  return new DefaultNodeWrapper(plugin, config as RuntimeConfig);
+  return new DefaultNodeWrapper(plugin, config as RuntimeConfig, getControl);
 }

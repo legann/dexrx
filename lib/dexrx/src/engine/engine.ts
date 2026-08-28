@@ -16,6 +16,7 @@ import {
   catchError,
   throttleTime,
   skipWhile,
+  skip,
 } from 'rxjs/operators';
 
 // Import engine flags from types
@@ -49,7 +50,7 @@ import { EngineStats } from '../types/engine-stats';
 import { HookManager } from './hook-manager';
 import { EngineMemoryStats } from '../types/engine-stats';
 import { IEnvironmentAdapter, createEnvironmentAdapter } from '../utils/environment';
-import { NodeConfig } from '../types/utils';
+import { NodeConfig, isObject } from '../types/utils';
 import { getErrorMessage } from '../utils/node-error';
 
 /** Normalize plugin result to Observable (Observable | Promise | value). Promise only from execution context adapter. */
@@ -76,8 +77,16 @@ function generateUuid(): string {
 function stripRuntimeFields(config: NodeConfig): NodeConfig {
   if (!config || typeof config !== 'object') return config;
 
-  // List of runtime fields that should not be exported
-  const runtimeFields = ['__runtime', '__subject', 'triggeredNodeId'];
+  // List of runtime fields that should not be exported. __targets is the addressed
+  // control-payload marker — reserved, never a legitimate config field or slot key.
+  const runtimeFields = [
+    '__runtime',
+    '__subject',
+    '__setControl',
+    '__requestConfigUpdate',
+    '__targets',
+    'triggeredNodeId',
+  ];
 
   // Create new object without runtime fields
   return Object.keys(config).reduce((acc, key) => {
@@ -116,6 +125,17 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
   private readonly subjects = new Map<string, BehaviorSubject<unknown>>();
   private readonly subscriptions = new Map<string, Subscription>();
   private readonly nodeDestructors = new Map<string, Subject<void>>();
+  /** Control-channel: latest config delta pushed into each target node (keyed by target id). */
+  private readonly controlSlots = new Map<string, NodeConfig>();
+  /** Control-channel: routing subscription per controller node (keyed by controller id). */
+  private readonly controlRoutingSubs = new Map<string, Subscription>();
+  /** Triggering control (phase 3): coalesced pending config updates per target. */
+  private readonly pendingConfigUpdates = new Map<
+    string,
+    { delta: NodeConfig; timer: ReturnType<typeof setTimeout> }
+  >();
+  /** Triggering control: last applied triggering-update timestamp per target (rate guard). */
+  private readonly lastTriggeringUpdateAt = new Map<string, number>();
   private readonly destroy$ = new Subject<void>();
   private readonly cacheProvider: ICacheProvider;
   private cacheCleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -452,23 +472,24 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           ? (this.inputGuardService.deepSanitize(def.config, 0, maxDepth) as NodeConfig)
           : def.config;
 
-        // Check array of input nodes
-        let sanitizedInputs = def.inputs;
-        if (Array.isArray(def.inputs)) {
-          sanitizedInputs = def.inputs
-            .filter(id => typeof id === 'string')
-            .map(id =>
-              this.inputGuardService.isSafeString(id)
-                ? id
-                : this.inputGuardService.sanitizeString(id)
-            );
-        }
+        // Node-id arrays share one rule (inputs and control-channel targets)
+        const sanitizeIdArray = (ids?: readonly string[]): readonly string[] | undefined =>
+          Array.isArray(ids)
+            ? ids
+                .filter(id => typeof id === 'string')
+                .map(id =>
+                  this.inputGuardService.isSafeString(id)
+                    ? id
+                    : this.inputGuardService.sanitizeString(id)
+                )
+            : ids;
 
         // Return cleaned definition
         return {
           ...def,
           config: sanitizedConfig,
-          inputs: sanitizedInputs,
+          inputs: sanitizeIdArray(def.inputs),
+          controls: sanitizeIdArray(def.controls),
         };
       }
 
@@ -534,7 +555,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         sanitizedDef.config ?? {},
         this.options.executionMode === EngineExecutionMode.PARALLEL
           ? this.executionContext
-          : undefined
+          : undefined,
+        () => this.controlSlots.get(sanitizedDef.id)
       );
 
       const subject = new BehaviorSubject<unknown>(INIT_NODE_EXEC);
@@ -553,6 +575,10 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           hasSubject: !!wrapperWithConfig.config.__subject,
         });
       }
+
+      // Control-channel: imperative writer + broadcast routing for controllers
+      this.injectControlRuntime(sanitizedDef, wrapper);
+      this.setupControlRouting(sanitizedDef, subject);
 
       // Set cache options for node if specified
       if (sanitizedDef.cacheOptions) {
@@ -795,7 +821,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         sanitizedDef.config ?? {},
         this.options.executionMode === EngineExecutionMode.PARALLEL
           ? this.executionContext
-          : undefined
+          : undefined,
+        () => this.controlSlots.get(id)
       );
 
       // 🔧 ADD subject to config wrapper for data nodes
@@ -812,6 +839,13 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           hasSubject: !!wrapperWithConfig.config.__subject,
         });
       }
+
+      // Control-channel: re-inject writer and re-create routing from the NEW definition
+      // (cleanupNode above dropped the old routing subscription; targets may have changed).
+      // skipCurrent: the existing subject would replay the stale last payload on subscribe;
+      // retargeted/new targets warm up on the controller's next real emission instead.
+      this.injectControlRuntime(sanitizedDef, wrapper);
+      this.setupControlRouting(sanitizedDef, oldSubject, true);
 
       // Set cache options for node if specified
       if (sanitizedDef.cacheOptions) {
@@ -969,12 +1003,248 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
     this.activeObservableNodes.delete(id);
 
+    // Control-channel teardown: drop this node's routing subscription (it will be
+    // re-created by updateNode from the new definition). The node's own control-slot
+    // survives updateNode (preserveSubject=true) and is dropped on real removal.
+    this.controlRoutingSubs.get(id)?.unsubscribe();
+    this.controlRoutingSubs.delete(id);
+    if (!preserveSubject) {
+      this.controlSlots.delete(id);
+      // Triggering control: drop the pending update and the rate history on real
+      // removal only — updateNode (preserveSubject=true) must keep both (the rate
+      // guard spans triggering updates, which themselves run through updateNode).
+      const pendingUpdate = this.pendingConfigUpdates.get(id);
+      if (pendingUpdate) {
+        clearTimeout(pendingUpdate.timer);
+        this.pendingConfigUpdates.delete(id);
+      }
+      this.lastTriggeringUpdateAt.delete(id);
+    }
+
     // 🆕 Cleanup deferred hooks for this node
     if (this.pendingSkipComputationHooks.has(id)) {
       this.pendingSkipComputationHooks.delete(id);
       this.logger.logEvent('engine', 'pending-hook-cleanup', {
         nodeId: id,
         reason: 'node-cleanup',
+      });
+    }
+  }
+
+  /**
+   * Merges a control delta into the target's control-slot (last-write-wins per key).
+   * The write does NOT trigger the target: it applies the merged slot on its next
+   * compute (the wrapper overlays the slot on the captured config). Runtime fields
+   * are stripped so a controller cannot overwrite `__subject`/`__runtime` of the target.
+   */
+  private setControlSlot(targetId: string, delta: NodeConfig): void {
+    if (this.state === EngineState.DESTROYED) return;
+    if (typeof targetId !== 'string' || !targetId) return;
+    if (!isObject(delta)) return;
+
+    let stripped = stripRuntimeFields(delta);
+    // Same built-in sanitizer the base config passes through in validateAndSanitizeNode:
+    // when sanitizeInput is on, the slot overlay must not be a side door around it.
+    if (this.options.sanitizeInput) {
+      const maxDepth = this.options.maxDepth ?? 10;
+      stripped = this.inputGuardService.deepSanitize(stripped, 0, maxDepth) as NodeConfig;
+    }
+    this.controlSlots.set(targetId, { ...this.controlSlots.get(targetId), ...stripped });
+    this.logger.logEvent('engine', 'control-slot-written', {
+      targetId,
+      keys: Object.keys(stripped),
+    });
+  }
+
+  /**
+   * Routes a controller emission into the control-slots of its declared targets.
+   * Non-object payloads (including INIT_NODE_EXEC / SKIP_NODE_EXEC symbols and
+   * null) are ignored.
+   *
+   * Two payload shapes, disambiguated by the explicit `__targets` marker:
+   * - broadcast (no marker): the whole payload is one delta, written to EVERY
+   *   declared target;
+   * - addressed (`{ __targets: { targetId: delta, ... } }`): each listed target
+   *   gets its own delta. Addressing is confined to `def.controls` — the declared
+   *   list is the controller's authority; ids outside it are dropped (logged).
+   *   Non-object deltas and other payload keys next to `__targets` are ignored.
+   */
+  private routeControl(def: INodeDefinition, payload: unknown): void {
+    if (!isObject(payload)) return;
+
+    const targets = def.controls ?? [];
+    const addressed = payload.__targets;
+
+    if (addressed !== undefined) {
+      if (!isObject(addressed)) return;
+
+      for (const [targetId, delta] of Object.entries(addressed)) {
+        if (!targets.includes(targetId)) {
+          this.logger.logEvent('engine', 'control-target-not-declared', {
+            controllerId: def.id,
+            targetId,
+          });
+          continue;
+        }
+        if (!isObject(delta)) continue;
+        this.setControlSlot(targetId, delta as NodeConfig);
+      }
+      return;
+    }
+
+    for (const targetId of targets) {
+      this.setControlSlot(targetId, payload as NodeConfig);
+    }
+  }
+
+  /**
+   * (Re)creates the routing subscription for a controller node: every emission of
+   * its subject is broadcast into the control-slots of `def.controls`. The
+   * subscription lives on the subject (survives stop/resume) and is torn down in
+   * cleanupNode; updateNode re-creates it from the new definition.
+   *
+   * `skipCurrent` must be true when re-wiring an EXISTING subject (updateNode):
+   * a BehaviorSubject replays its current value synchronously on subscribe, which
+   * would re-broadcast the controller's stale last payload with no new emission —
+   * breaking last-write-wins ordering across controllers and seeding retargeted
+   * nodes with a payload computed for the old target set. Fresh subjects hold
+   * INIT_NODE_EXEC (rejected by routeControl), so add/build/import paths keep the
+   * plain subscribe — importState relies on it to restore slots from currentValue.
+   */
+  private setupControlRouting(
+    def: INodeDefinition,
+    subject: BehaviorSubject<unknown>,
+    skipCurrent = false
+  ): void {
+    this.controlRoutingSubs.get(def.id)?.unsubscribe();
+    this.controlRoutingSubs.delete(def.id);
+
+    if (!def.controls || def.controls.length === 0) return;
+
+    const source = skipCurrent ? subject.pipe(skip(1)) : subject;
+    const sub = source.subscribe(payload => this.routeControl(def, payload));
+    this.controlRoutingSubs.set(def.id, sub);
+    this.logger.logEvent('engine', 'control-routing-created', {
+      nodeId: def.id,
+      targets: [...def.controls],
+      skipCurrent,
+    });
+  }
+
+  /**
+   * Injects the imperative `__setControl` writer into the wrapper config of a node
+   * that declares `controls` (the `__subject` injection pattern). Declaring
+   * `controls: []` marks a controller with dynamic targets only.
+   */
+  private injectControlRuntime(def: INodeDefinition, wrapper: NodeWrapper): void {
+    if (!def.controls || !wrapper || !('config' in wrapper)) return;
+
+    // Guard on the owner still existing: a plugin-retained reference (leaked timer,
+    // stale closure) must not keep steering live targets after its node is removed.
+    const ownerId = def.id;
+    const wrapperWithConfig = wrapper as unknown as { config: Record<string, unknown> };
+    wrapperWithConfig.config.__setControl = (targetId: string, delta: NodeConfig) => {
+      if (!this.defs.has(ownerId)) return;
+      this.setControlSlot(targetId, delta);
+    };
+    // Triggering escape hatch for subscribe-time fields (e.g. a live poller's
+    // interval): the slot overlay only applies on compute, which a stream source
+    // never re-enters. The plugin path enforces a 1000ms-per-target floor — the
+    // triggering path re-creates the target's subscription, so runaway is costly.
+    wrapperWithConfig.config.__requestConfigUpdate = (
+      targetId: string,
+      delta: NodeConfig,
+      options?: { minIntervalMs?: number }
+    ) => {
+      if (!this.defs.has(ownerId)) return;
+      this.requestConfigUpdate(targetId, delta, {
+        minIntervalMs: Math.max(1000, options?.minIntervalMs ?? 1000),
+      });
+    };
+  }
+
+  /**
+   * Triggering control (phase 3): schedules a config-delta update of the target that
+   * RECOMPUTES it immediately (unlike the non-triggering control-slot). The base
+   * `def.config` is rewritten via updateNode; input BehaviorSubjects replay their
+   * latest values, so the target recomputes without waiting for a new data tick.
+   *
+   * Runaway protection:
+   * - always deferred to a macrotask — safe to call from subscription handlers
+   *   (never re-enters the engine inside an emission stack);
+   * - rate guard: at most one updateNode per `minIntervalMs` per target; calls
+   *   inside the window COALESCE (deltas merge per key, one trailing update).
+   *
+   * Non-object deltas are ignored; runtime fields are stripped. If the target is
+   * removed before the flush, the pending update is dropped.
+   */
+  requestConfigUpdate(
+    targetId: string,
+    delta: NodeConfig,
+    options?: { minIntervalMs?: number }
+  ): void {
+    if (this.state === EngineState.DESTROYED) return;
+    if (typeof targetId !== 'string' || !targetId) return;
+    if (!isObject(delta)) return;
+
+    const stripped = stripRuntimeFields(delta);
+    const pending = this.pendingConfigUpdates.get(targetId);
+    if (pending) {
+      // Coalesce into the already-scheduled update (per-key merge, last-write-wins).
+      pending.delta = { ...pending.delta, ...stripped };
+      return;
+    }
+
+    const minIntervalMs = options?.minIntervalMs ?? 0;
+    const elapsed = Date.now() - (this.lastTriggeringUpdateAt.get(targetId) ?? 0);
+    const delay = Math.max(0, minIntervalMs - elapsed);
+    const timer = setTimeout(() => this.flushConfigUpdate(targetId), delay);
+    this.pendingConfigUpdates.set(targetId, { delta: stripped, timer });
+    this.logger.logEvent('engine', 'config-update-scheduled', {
+      targetId,
+      delayMs: delay,
+      keys: Object.keys(stripped),
+    });
+  }
+
+  private flushConfigUpdate(targetId: string): void {
+    const pending = this.pendingConfigUpdates.get(targetId);
+    if (!pending) return;
+
+    // PAUSED: do NOT fall through to updateNode — its deferred replay
+    // (nodesToUpdateOnResume) replaces wholesale, so a second delta scheduled in
+    // the same pause window would clobber the first, breaking the coalescing
+    // contract across the two deferred mechanisms. Keep the pending entry (later
+    // requestConfigUpdate calls keep merging into it) and retry after resume.
+    if (this.state === EngineState.PAUSED) {
+      pending.timer = setTimeout(() => this.flushConfigUpdate(targetId), 50);
+      return;
+    }
+
+    this.pendingConfigUpdates.delete(targetId);
+
+    if (this.state === EngineState.DESTROYED) return;
+    const def = this.defs.get(targetId);
+    if (!def) {
+      this.logger.logEvent('engine', 'config-update-dropped', {
+        targetId,
+        reason: 'node-removed',
+      });
+      return;
+    }
+
+    const updatedDef: INodeDefinition = {
+      ...def,
+      config: { ...def.config, ...pending.delta },
+    };
+    try {
+      this.updateNode(targetId, updatedDef);
+      // Stamp the rate guard only when the update actually applied.
+      this.lastTriggeringUpdateAt.set(targetId, Date.now());
+    } catch (error) {
+      this.logger.logEvent('engine', 'config-update-failed', {
+        targetId,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -996,11 +1266,23 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       this.defs.delete(id);
       this.hookManager.emit(EngineEventType.NODE_REMOVED, id);
 
-      // Update dependent nodes
+      // Update dependent nodes: strip the removed id from inputs AND from controls —
+      // otherwise a controller would keep broadcasting into the dead id's slot,
+      // resurrecting the slot cleanupNode just deleted (a later node re-added under
+      // the same id would inherit the zombie delta on its first compute).
       for (const [nodeId, def] of this.defs.entries()) {
-        if ((def.inputs ?? []).includes(id)) {
+        const dependsAsInput = (def.inputs ?? []).includes(id);
+        const dependsAsControl = (def.controls ?? []).includes(id);
+        if (dependsAsInput || dependsAsControl) {
           const updatedInputs = (def.inputs ?? []).filter(inputId => inputId !== id);
-          const updatedDef: INodeDefinition = { ...def, inputs: updatedInputs };
+          const updatedControls = def.controls
+            ? def.controls.filter(targetId => targetId !== id)
+            : undefined;
+          const updatedDef: INodeDefinition = {
+            ...def,
+            inputs: updatedInputs,
+            controls: updatedControls,
+          };
 
           this.logger.logEvent('engine', 'update-dependent-node', {
             nodeId,
@@ -1094,6 +1376,15 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       this.exitHandlerUnsubscribe();
       this.exitHandlerUnsubscribe = null;
     }
+    // Control-channel teardown shared by stop() and destroy(): stop() is terminal
+    // (state becomes DESTROYED, so a later destroy() early-returns and would never
+    // reach its own cleanup) — release routing subscriptions and slots here.
+    this.controlRoutingSubs.forEach(s => s.unsubscribe());
+    this.controlRoutingSubs.clear();
+    this.controlSlots.clear();
+    this.pendingConfigUpdates.forEach(p => clearTimeout(p.timer));
+    this.pendingConfigUpdates.clear();
+    this.lastTriggeringUpdateAt.clear();
   }
 
   destroy(): void {
@@ -1150,7 +1441,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       destroyer.complete();
     });
 
-    // Clean up remaining subscriptions
+    // Clean up remaining subscriptions. Control-channel teardown (routing subs,
+    // slots, pending timers) already ran inside releaseRuntimeResources() above.
     this.subscriptions.forEach(s => s.unsubscribe());
     this.pausedSubscriptions.forEach(s => s.unsubscribe());
     this.wrappers.forEach(w => w.destroy());
@@ -1257,7 +1549,12 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       }
 
       // Generate cache key
-      const cacheKey = this.cacheProvider.generateCacheKey(nodeId, inputs, def.config ?? {});
+      // Include the control-slot overlay: the wrapper computes with base+slot, so a
+      // slot-influenced value must not be cached under the bare base-config key.
+      const cacheKey = this.cacheProvider.generateCacheKey(nodeId, inputs, {
+        ...(def.config ?? {}),
+        ...this.controlSlots.get(nodeId),
+      });
 
       try {
         // Compute and cache result
@@ -1307,8 +1604,13 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         nodes.push({
           id: nodeDef.id,
           type: nodeDef.type,
-          config: nodeDef.config ? JSON.parse(JSON.stringify(nodeDef.config)) : undefined,
+          // Strip runtime fields explicitly (symmetric with exportState) instead of
+          // relying on JSON.stringify silently dropping the __setControl function.
+          config: nodeDef.config
+            ? JSON.parse(JSON.stringify(stripRuntimeFields(nodeDef.config)))
+            : undefined,
           inputs: nodeDef.inputs ? [...nodeDef.inputs] : undefined,
+          controls: nodeDef.controls ? [...nodeDef.controls] : undefined,
           cacheOptions: nodeDef.cacheOptions ? { ...nodeDef.cacheOptions } : undefined,
         });
       }
@@ -1856,6 +2158,10 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       });
     }
 
+    // Control-channel: keep the imperative writer present after resume paths
+    // (routing subscriptions live on the subject and survive stop/resume untouched)
+    this.injectControlRuntime(def, wrapper);
+
     // Create new destructor
     const destroy$ = new Subject<void>();
     this.nodeDestructors.set(nodeId, destroy$);
@@ -2170,6 +2476,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         id: nodeId,
         type: nodeDef.type,
         inputs: nodeDef.inputs ?? [],
+        controls: nodeDef.controls ? [...nodeDef.controls] : undefined,
         config: cleanConfig,
         currentValue: serializeValue(subject.getValue()), // Convert Symbol to strings
         errorCount: nodeErrorCounts.get(nodeId) ?? 0,
@@ -2193,6 +2500,19 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
 
     // Create state object with safe serialization
     // Always export state as STOPPED for correct import
+    // Control-channel slots (already runtime-stripped plain objects). Serialized so an
+    // addressed controller's per-target state survives restarts — its last payload may
+    // cover only a subset of targets, so the currentValue replay alone is not enough.
+    // Omitted entirely when empty: persisted snapshots of controls-less graphs stay
+    // byte-identical to the pre-channel format.
+    let controlSlotsSnapshot: Record<string, NodeConfig> | undefined;
+    if (this.controlSlots.size > 0) {
+      controlSlotsSnapshot = {};
+      for (const [targetId, slot] of this.controlSlots.entries()) {
+        controlSlotsSnapshot[targetId] = { ...slot };
+      }
+    }
+
     const stateSnapshot: EngineStateSnapshot = {
       engineId: this.engineId,
       createdAt: this.startTime,
@@ -2201,6 +2521,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       options: { ...this.options },
       stats,
       nodes,
+      controlSlots: controlSlotsSnapshot,
       metadata: includeMetadata
         ? (metadata as Readonly<Record<string, import('../types/utils').Serializable>>)
         : undefined,
@@ -2228,6 +2549,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           errorHistoryLastExecution: [],
         },
         nodes,
+        controlSlots: controlSlotsSnapshot,
         metadata: includeMetadata
           ? (metadata as Readonly<Record<string, import('../types/utils').Serializable>>)
           : undefined,
@@ -2349,6 +2671,7 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           id: nodeState.id,
           type: nodeState.type,
           inputs: [...nodeState.inputs],
+          controls: nodeState.controls ? [...nodeState.controls] : undefined,
           config: nodeState.config ? JSON.parse(JSON.stringify(nodeState.config)) : undefined,
         };
 
@@ -2386,6 +2709,18 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
             nodeId,
             reason: 'currentValue is undefined',
           });
+        }
+      }
+
+      // Restore control-channel slots through the SAME writer as live pushes
+      // (setControlSlot: guards, strip, deepSanitize when sanitizeInput is on, log) —
+      // authoritative over the currentValue replay that ran during the node loop
+      // (addressed routing: the last payload covers a subset of targets; a 'hold'
+      // last emission covers none; per-key merge over replay equals replace here).
+      // Older snapshots without the field keep the replay-derived slots (compat).
+      if (state.controlSlots) {
+        for (const [targetId, slot] of Object.entries(state.controlSlots)) {
+          this.setControlSlot(targetId, slot as NodeConfig);
         }
       }
 
@@ -2450,6 +2785,13 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
     this.pausedSubscriptions.clear();
     this.nodeDestructors.clear();
     this.nodesToUpdateOnResume.clear();
+    // Routing subs were dropped per-node by the cleanupNode loop above (their keys
+    // are always a subset of defs). Slots/pending CAN outlive defs — __setControl
+    // and requestConfigUpdate accept dynamic ids — so these sweeps are load-bearing.
+    this.controlSlots.clear();
+    this.pendingConfigUpdates.forEach(p => clearTimeout(p.timer));
+    this.pendingConfigUpdates.clear();
+    this.lastTriggeringUpdateAt.clear();
 
     // Reset counters
     this.computeCount = 0;
@@ -2484,7 +2826,8 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       sanitizedDef.config ?? {},
       this.options.executionMode === EngineExecutionMode.PARALLEL
         ? this.executionContext
-        : undefined
+        : undefined,
+      () => this.controlSlots.get(sanitizedDef.id)
     );
 
     const subject = new BehaviorSubject<unknown>(INIT_NODE_EXEC);
@@ -2507,6 +2850,10 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
         hasSubject: !!wrapperWithConfig.config.__subject,
       });
     }
+
+    // Control-channel: imperative writer + broadcast routing for controllers
+    this.injectControlRuntime(sanitizedDef, wrapper);
+    this.setupControlRouting(sanitizedDef, subject);
 
     // Set cache options for node if specified
     if (sanitizedDef.cacheOptions) {

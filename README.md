@@ -18,6 +18,7 @@ DexRx provides a declarative way to build and orchestrate reactive computation g
 - [Modes](#modes)
 - [Parallel Execution](#parallel-execution)
 - [Node Types](#node-types)
+- [Control Channel](#control-channel)
 - [Engine Hooks](#engine-hooks)
 - [Quick Start](#quick-start)
 - [License](#license)
@@ -135,6 +136,20 @@ In a DexRx graph, there are two types of nodes:
 - Have one or more inputs (depend on other nodes)
 - Transform or compute values based on inputs (transformation/computation logic is determined by node plugin)
 - Automatically recalculate when input values change
+
+## Control Channel
+
+A second channel between nodes: a controller declares `controls: [targetIds]` and pushes config deltas into its targets. Control links live outside `edges`; the data DAG stays acyclic. A delta lands in the target's control-slot and overlays the base config on the target's next compute.
+
+```
+ws ──► filter ──► controller
+        ▲             │
+        └── control-slot (push, non-triggering)
+```
+
+- **Routing:** an object payload goes to every declared target; `{ __targets: { id: delta } }` addresses targets individually. Slots merge per top-level key.
+- **Triggering:** `requestConfigUpdate(targetId, delta, { minIntervalMs })` rewrites the base config and recomputes immediately — the path for subscribe-time fields such as a live poller's interval.
+- **Lifecycle:** slots survive `exportState()`/`importState()` and are cleaned up on node removal.
 
 ## Engine Hooks
 

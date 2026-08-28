@@ -5,7 +5,7 @@ import { IGraphDefinition } from './graph-definition';
 import { EngineState } from './engine-state';
 import { EngineStats } from './engine-stats';
 import { EngineEventHandlers, UnsubscribeFn } from './engine-hooks';
-import { NodeValue, Serializable } from './utils';
+import { NodeConfig, NodeValue, Serializable } from './utils';
 import type { EngineStateSnapshot } from './engine-state-snapshot';
 
 // Re-export NodeState and EngineStateSnapshot from separate file for Build API
@@ -58,6 +58,21 @@ export interface IReactiveGraphEngine {
    * @param def New node definition
    */
   updateNode(id: string, def: INodeDefinition): void;
+
+  /**
+   * Triggering control: schedules a config-delta update that recomputes the target
+   * immediately (deferred to a macrotask; calls within `minIntervalMs` coalesce
+   * into one trailing update). Rewrites the base config, unlike the non-triggering
+   * control-slot channel.
+   * @param targetId Target node identifier
+   * @param delta Partial config merged over the target's base config
+   * @param options Rate guard: minimum interval between applied updates per target
+   */
+  requestConfigUpdate(
+    targetId: string,
+    delta: NodeConfig,
+    options?: { minIntervalMs?: number }
+  ): void;
 
   /**
    * Removes node from graph

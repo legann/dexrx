@@ -22,6 +22,29 @@ export interface NodeConfig {
   __runtime?: IRuntimeContext;
 
   /**
+   * Imperative control-channel writer, injected by the engine for nodes that
+   * declare `controls` in their definition. Merges `delta` into the target's
+   * control-slot without triggering the target (it applies the delta on its
+   * next compute). Runtime-only: stripped on export.
+   */
+  __setControl?: (targetId: string, delta: NodeConfig) => void;
+
+  /**
+   * Triggering control writer, injected alongside `__setControl` for nodes that
+   * declare `controls`. Schedules a base-config update of the target that
+   * recomputes it immediately — the path for subscribe-time fields a control-slot
+   * cannot reach on a live stream source (e.g. a poller's `poll` interval, captured
+   * when its Observable subscribes). Rate-guarded: the plugin path enforces a
+   * minimum interval of 1000ms per target (calls inside the window coalesce).
+   * Runtime-only: stripped on export; main-thread only.
+   */
+  __requestConfigUpdate?: (
+    targetId: string,
+    delta: NodeConfig,
+    options?: { minIntervalMs?: number }
+  ) => void;
+
+  /**
    * Other node-specific configuration fields
    * Each node type may have different fields
    */

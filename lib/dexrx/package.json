@@ -1,6 +1,6 @@
 {
   "name": "@legann/dexrx",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "DexRx - Reactive Graph Engine for JavaScript/TypeScript",
   "main": "./dist/index.js",
   "module": "./dist/esm/index.js",

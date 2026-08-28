@@ -55,6 +55,7 @@ export function withNodes(nodes: INodeDefinition[]): GraphOperator {
         type: nodeDef.type, // Use the plugin type directly
         inputs: nodeDef.inputs ? [...nodeDef.inputs] : [],
         config: { ...nodeDef.config },
+        controls: nodeDef.controls ? [...nodeDef.controls] : undefined,
         // No computeFunction - will use plugin from registry
       };
 
@@ -71,6 +72,10 @@ export function withNodes(nodes: INodeDefinition[]): GraphOperator {
         edges,
       };
     }
+
+    // Control-channel targets are validated in createGraph AFTER all operators run:
+    // controls may point at any node, including one added by a LATER withNodes call,
+    // so a per-call check here would falsely reject cross-call forward references.
 
     return currentGraph;
   };
