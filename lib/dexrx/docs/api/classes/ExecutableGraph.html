@@ -1,5 +1,5 @@
-<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>ExecutableGraph | DexRx API Documentation - v2.2.0</title><meta name="description" content="Documentation for DexRx API Documentation"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
-<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">DexRx API Documentation - v2.2.0</a>
+<!DOCTYPE html><html class="default" lang="en" data-base="../"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>ExecutableGraph | DexRx API Documentation - v2.3.0</title><meta name="description" content="Documentation for DexRx API Documentation"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="../assets/style.css"/><link rel="stylesheet" href="../assets/highlight.css"/><script defer src="../assets/main.js"></script><script async src="../assets/icons.js" id="tsd-icons-script"></script><script async src="../assets/search.js" id="tsd-search-script"></script><script async src="../assets/navigation.js" id="tsd-nav-script"></script><script async src="../assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="../index.html" class="title">DexRx API Documentation - v2.3.0</a>
 <div id="tsd-toolbar-links"></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
@@ -27,7 +27,7 @@ Converts Build API graph to graph engine format and executes it</p>
 <ul class="tsd-hierarchy">
 <li class="tsd-hierarchy-item"><a href="../interfaces/LongRunningGraph.html" class="tsd-signature-type tsd-kind-interface">LongRunningGraph</a></li></ul></li></ul></section><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L115">graph/graph.ts:115</a></li></ul></aside>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L155">graph/graph.ts:155</a></li></ul></aside>
 <section class="tsd-panel-group tsd-index-group">
 <section class="tsd-panel tsd-index-panel">
 <details class="tsd-index-content tsd-accordion" open><summary class="tsd-accordion-summary tsd-index-summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
@@ -58,6 +58,7 @@ Converts Build API graph to graph engine format and executes it</p>
 <a href="#observesubscribednodes" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>observe<wbr/>Subscribed<wbr/>Nodes</span></a>
 <a href="#on" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>on</span></a>
 <a href="#pause" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>pause</span></a>
+<a href="#requestconfigupdate" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>request<wbr/>Config<wbr/>Update</span></a>
 <a href="#resume" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>resume</span></a>
 <a href="#run" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>run</span></a>
 <a href="#savestate" class="tsd-index-link"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>save<wbr/>State</span></a>
@@ -89,7 +90,7 @@ Converts Build API graph to graph engine format and executes it</p>
 <li><span><span class="tsd-kind-parameter">graph</span>: <a href="../interfaces/GraphDefinition.html" class="tsd-signature-type tsd-kind-interface">GraphDefinition</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <a href="" class="tsd-signature-type tsd-kind-class">ExecutableGraph</a><span class="tsd-signature-symbol">&lt;</span><a class="tsd-signature-type tsd-kind-type-parameter" href="#t">T</a><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L130">graph/graph.ts:130</a></li></ul></aside></div></li></ul></section></section></details>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L170">graph/graph.ts:170</a></li></ul></aside></div></li></ul></section></section></details>
 <details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Accessors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
 <h2 class="tsd-anchor-link" id="accessors-1">Accessors<a href="#accessors-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
 <section>
@@ -103,7 +104,7 @@ Converts Build API graph to graph engine format and executes it</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">boolean</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L123">graph/graph.ts:123</a></li></ul></aside></div></li></ul></section></section></details>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L163">graph/graph.ts:163</a></li></ul></aside></div></li></ul></section></section></details>
 <details class="tsd-panel-group tsd-member-group tsd-accordion" open><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>
 <h2 class="tsd-anchor-link" id="methods-1">Methods<a href="#methods-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h2></summary>
 <section>
@@ -135,7 +136,7 @@ Converts Build API graph to graph engine format and executes it</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1151">graph/graph.ts:1151</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1192">graph/graph.ts:1192</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="deletestate"><span>delete<wbr/>State</span><a href="#deletestate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -161,7 +162,7 @@ Converts Build API graph to graph engine format and executes it</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1104">graph/graph.ts:1104</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1145">graph/graph.ts:1145</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="destroy"><span>destroy</span><a href="#destroy" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -172,7 +173,7 @@ Converts Build API graph to graph engine format and executes it</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1246">graph/graph.ts:1246</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1288">graph/graph.ts:1288</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="execute"><span>execute</span><a href="#execute" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -198,7 +199,7 @@ Use this for one-shot computations like AWS Lambda functions.</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L154">graph/graph.ts:154</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L194">graph/graph.ts:194</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="exportstate"><span>export<wbr/>State</span><a href="#exportstate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -215,7 +216,7 @@ otherwise creates a new one for export</p>
 <li><span><span class="tsd-kind-parameter">includeMetadata</span>: <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol"> = true</span></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <a href="../interfaces/EngineStateSnapshot.html" class="tsd-signature-type tsd-kind-interface">EngineStateSnapshot</a></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L594">graph/graph.ts:594</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L635">graph/graph.ts:635</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="getactivetasks"><span>get<wbr/>Active<wbr/>Tasks</span><a href="#getactivetasks" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -226,7 +227,7 @@ otherwise creates a new one for export</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">number</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L770">graph/graph.ts:770</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L811">graph/graph.ts:811</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="getstate"><span>get<wbr/>State</span><a href="#getstate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -237,7 +238,7 @@ otherwise creates a new one for export</p>
 </div>
 <h4 class="tsd-returns-title">Returns <a href="../enums/EngineState.html" class="tsd-signature-type tsd-kind-enum">EngineState</a></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L757">graph/graph.ts:757</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L798">graph/graph.ts:798</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="getstats"><span>get<wbr/>Stats</span><a href="#getstats" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -249,7 +250,7 @@ Uses existing engine if it was already created, otherwise creates a new one</p>
 </div>
 <h4 class="tsd-returns-title">Returns <a href="../interfaces/EngineStats.html" class="tsd-signature-type tsd-kind-interface">EngineStats</a></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L733">graph/graph.ts:733</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L774">graph/graph.ts:774</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="importstate"><span>import<wbr/>State</span><a href="#importstate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -269,7 +270,7 @@ For single-shot graphs: imports state (call before execute())</p>
 <li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">preserveOptions</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span><span class="tsd-signature-symbol">;</span> <span class="tsd-kind-property">validateTypes</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">boolean</span> <span class="tsd-signature-symbol">}</span></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Promise</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">void</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L626">graph/graph.ts:626</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L667">graph/graph.ts:667</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="loadstate"><span>load<wbr/>State</span><a href="#loadstate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -300,7 +301,7 @@ For single-shot graphs: imports state (call before execute())</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1084">graph/graph.ts:1084</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1125">graph/graph.ts:1125</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="notify"><span>notify</span><a href="#notify" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -329,7 +330,7 @@ For single-shot graphs: imports state (call before execute())</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1130">graph/graph.ts:1130</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1171">graph/graph.ts:1171</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="observenode"><span>observe<wbr/>Node</span><a href="#observenode" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -345,7 +346,7 @@ Useful for reactive subscriptions</p>
 <li><span><span class="tsd-kind-parameter">nodeId</span>: <span class="tsd-signature-type">string</span></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Observable</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span> <span class="tsd-signature-symbol">|</span> <span class="tsd-signature-type">undefined</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L399">graph/graph.ts:399</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L440">graph/graph.ts:440</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="observesubscribednodes"><span>observe<wbr/>Subscribed<wbr/>Nodes</span><a href="#observesubscribednodes" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -356,7 +357,7 @@ Useful for reactive subscriptions</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">Map</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">Observable</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L777">graph/graph.ts:777</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L818">graph/graph.ts:818</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="on"><span>on</span><a href="#on" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -376,7 +377,7 @@ Useful for reactive subscriptions</p>
 <li><span><span class="tsd-kind-parameter">handler</span>: <a href="../interfaces/EngineEventHandlers.html" class="tsd-signature-type tsd-kind-interface">EngineEventHandlers</a><span class="tsd-signature-symbol">[</span><a class="tsd-signature-type tsd-kind-type-parameter" href="#onk">K</a><span class="tsd-signature-symbol">]</span></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <a href="../types/UnsubscribeFn.html" class="tsd-signature-type tsd-kind-type-alias">UnsubscribeFn</a></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L711">graph/graph.ts:711</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L752">graph/graph.ts:752</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="pause"><span>pause</span><a href="#pause" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -387,7 +388,22 @@ Useful for reactive subscriptions</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L574">graph/graph.ts:574</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L615">graph/graph.ts:615</a></li></ul></aside></div></li></ul></section>
+<section class="tsd-panel tsd-member">
+<h3 class="tsd-anchor-link" id="requestconfigupdate"><span>request<wbr/>Config<wbr/>Update</span><a href="#requestconfigupdate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
+<ul class="tsd-signatures">
+<li class="">
+<div class="tsd-signature tsd-anchor-link" id="requestconfigupdate-1"><span class="tsd-kind-call-signature">requestConfigUpdate</span><span class="tsd-signature-symbol">(</span><br/>    <span class="tsd-kind-parameter">nodeId</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">delta</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span><span class="tsd-signature-symbol">,</span><br/>    <span class="tsd-kind-parameter">options</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">minIntervalMs</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span> <span class="tsd-signature-symbol">}</span><span class="tsd-signature-symbol">,</span><br/><span class="tsd-signature-symbol">)</span><span class="tsd-signature-symbol">:</span> <span class="tsd-signature-type">void</span><a href="#requestconfigupdate-1" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></div>
+<div class="tsd-description">
+<div class="tsd-parameters">
+<h4 class="tsd-parameters-title">Parameters</h4>
+<ul class="tsd-parameter-list">
+<li><span><span class="tsd-kind-parameter">nodeId</span>: <span class="tsd-signature-type">string</span></span></li>
+<li><span><span class="tsd-kind-parameter">delta</span>: <span class="tsd-signature-type">Record</span><span class="tsd-signature-symbol">&lt;</span><span class="tsd-signature-type">string</span><span class="tsd-signature-symbol">,</span> <span class="tsd-signature-type">unknown</span><span class="tsd-signature-symbol">&gt;</span></span></li>
+<li><span><code class="tsd-tag">Optional</code><span class="tsd-kind-parameter">options</span>: <span class="tsd-signature-symbol">{</span> <span class="tsd-kind-property">minIntervalMs</span><span class="tsd-signature-symbol">?:</span> <span class="tsd-signature-type">number</span> <span class="tsd-signature-symbol">}</span></span></li></ul></div>
+<h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
+<ul>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1528">graph/graph.ts:1528</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="resume"><span>resume</span><a href="#resume" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -398,7 +414,7 @@ Useful for reactive subscriptions</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L583">graph/graph.ts:583</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L624">graph/graph.ts:624</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="run"><span>run</span><a href="#run" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -434,7 +450,7 @@ Works in both browser and Node.js environments.</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L223">graph/graph.ts:223</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L263">graph/graph.ts:263</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="savestate"><span>save<wbr/>State</span><a href="#savestate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -463,7 +479,7 @@ Works in both browser and Node.js environments.</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1054">graph/graph.ts:1054</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1095">graph/graph.ts:1095</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="stop"><span>stop</span><a href="#stop" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -475,7 +491,7 @@ Unsubscribes from all active subscriptions</p>
 </div>
 <h4 class="tsd-returns-title">Returns <span class="tsd-signature-type">void</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L556">graph/graph.ts:556</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L597">graph/graph.ts:597</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="subscribe"><span>subscribe</span><a href="#subscribe" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -504,7 +520,7 @@ Unsubscribes from all active subscriptions</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1172">graph/graph.ts:1172</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1213">graph/graph.ts:1213</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="unsubscribe"><span>unsubscribe</span><a href="#unsubscribe" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -533,7 +549,7 @@ Unsubscribes from all active subscriptions</p>
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1193">graph/graph.ts:1193</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1234">graph/graph.ts:1234</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="updategraph"><span>update<wbr/>Graph</span><a href="#updategraph" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -564,7 +580,7 @@ Stops and destroys old graph, creates new one with same infrastructure (provider
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1280">graph/graph.ts:1280</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1322">graph/graph.ts:1322</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="updatenode"><span>update<wbr/>Node</span><a href="#updatenode" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -600,7 +616,7 @@ Preserves node's Subject and automatically triggers recalculation of dependent n
 
 </div></div><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1396">graph/graph.ts:1396</a></li></ul></aside></div></li></ul></section>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L1443">graph/graph.ts:1443</a></li></ul></aside></div></li></ul></section>
 <section class="tsd-panel tsd-member">
 <h3 class="tsd-anchor-link" id="fromstate"><code class="tsd-tag">Static</code><span>from<wbr/>State</span><a href="#fromstate" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="../assets/icons.svg#icon-anchor"></use></svg></a></h3>
 <ul class="tsd-signatures">
@@ -619,7 +635,7 @@ Preserves node's Subject and automatically triggers recalculation of dependent n
 <li><span><span class="tsd-kind-parameter">state</span>: <a href="../interfaces/EngineStateSnapshot.html" class="tsd-signature-type tsd-kind-interface">EngineStateSnapshot</a></span></li></ul></div>
 <h4 class="tsd-returns-title">Returns <a href="" class="tsd-signature-type tsd-kind-class">ExecutableGraph</a><span class="tsd-signature-symbol">&lt;</span><a class="tsd-signature-type tsd-kind-type-parameter" href="#fromstatet">T</a><span class="tsd-signature-symbol">&gt;</span></h4><aside class="tsd-sources">
 <ul>
-<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L702">graph/graph.ts:702</a></li></ul></aside></div></li></ul></section></section></details></div>
+<li>Defined in <a href="https://github.com/legann/dexrx/blob/main/lib/dexrx/src/graph/graph.ts#L743">graph/graph.ts:743</a></li></ul></aside></div></li></ul></section></section></details></div>
 <div class="col-sidebar">
 <div class="page-menu">
 <div class="tsd-navigation settings">
@@ -638,9 +654,9 @@ Preserves node's Subject and automatically triggers recalculation of dependent n
 <details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Accessors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Accessors</summary>
 <div><a href="#destroyed"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Accessor"><use href="../assets/icons.svg#icon-262144"></use></svg><span>destroyed</span></a></div></details>
 <details open class="tsd-accordion tsd-page-navigation-section"><summary class="tsd-accordion-summary" data-key="section-Methods"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><use href="../assets/icons.svg#icon-chevronDown"></use></svg>Methods</summary>
-<div><a href="#broadcast"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>broadcast</span></a><a href="#deletestate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>delete<wbr/>State</span></a><a href="#destroy"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>destroy</span></a><a href="#execute"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>execute</span></a><a href="#exportstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>export<wbr/>State</span></a><a href="#getactivetasks"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Active<wbr/>Tasks</span></a><a href="#getstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>State</span></a><a href="#getstats"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Stats</span></a><a href="#importstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>import<wbr/>State</span></a><a href="#loadstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>load<wbr/>State</span></a><a href="#notify"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>notify</span></a><a href="#observenode"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>observe<wbr/>Node</span></a><a href="#observesubscribednodes"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>observe<wbr/>Subscribed<wbr/>Nodes</span></a><a href="#on"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>on</span></a><a href="#pause"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>pause</span></a><a href="#resume"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>resume</span></a><a href="#run"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>run</span></a><a href="#savestate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>save<wbr/>State</span></a><a href="#stop"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>stop</span></a><a href="#subscribe"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>subscribe</span></a><a href="#unsubscribe"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>unsubscribe</span></a><a href="#updategraph"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>update<wbr/>Graph</span></a><a href="#updatenode"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>update<wbr/>Node</span></a><a href="#fromstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>from<wbr/>State</span></a></div></details></div></details></div>
+<div><a href="#broadcast"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>broadcast</span></a><a href="#deletestate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>delete<wbr/>State</span></a><a href="#destroy"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>destroy</span></a><a href="#execute"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>execute</span></a><a href="#exportstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>export<wbr/>State</span></a><a href="#getactivetasks"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Active<wbr/>Tasks</span></a><a href="#getstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>State</span></a><a href="#getstats"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>get<wbr/>Stats</span></a><a href="#importstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>import<wbr/>State</span></a><a href="#loadstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>load<wbr/>State</span></a><a href="#notify"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>notify</span></a><a href="#observenode"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>observe<wbr/>Node</span></a><a href="#observesubscribednodes"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>observe<wbr/>Subscribed<wbr/>Nodes</span></a><a href="#on"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>on</span></a><a href="#pause"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>pause</span></a><a href="#requestconfigupdate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>request<wbr/>Config<wbr/>Update</span></a><a href="#resume"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>resume</span></a><a href="#run"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>run</span></a><a href="#savestate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>save<wbr/>State</span></a><a href="#stop"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>stop</span></a><a href="#subscribe"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>subscribe</span></a><a href="#unsubscribe"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>unsubscribe</span></a><a href="#updategraph"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>update<wbr/>Graph</span></a><a href="#updatenode"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>update<wbr/>Node</span></a><a href="#fromstate"><svg class="tsd-kind-icon" viewBox="0 0 24 24" aria-label="Method"><use href="../assets/icons.svg#icon-2048"></use></svg><span>from<wbr/>State</span></a></div></details></div></details></div>
 <div class="site-menu">
-<nav class="tsd-navigation"><a href="../modules.html">DexRx API Documentation - v2.2.0</a>
+<nav class="tsd-navigation"><a href="../modules.html">DexRx API Documentation - v2.3.0</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>
 <p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>

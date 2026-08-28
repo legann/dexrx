@@ -1,5 +1,5 @@
-<!DOCTYPE html><html class="default" lang="en" data-base="./"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>DexRx API Documentation - v2.2.0</title><meta name="description" content="Documentation for DexRx API Documentation"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script><script async src="assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
-<div class="tsd-toolbar-contents container"><a href="index.html" class="title">DexRx API Documentation - v2.2.0</a>
+<!DOCTYPE html><html class="default" lang="en" data-base="./"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>DexRx API Documentation - v2.3.0</title><meta name="description" content="Documentation for DexRx API Documentation"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script><script async src="assets/hierarchy.js" id="tsd-hierarchy-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar">
+<div class="tsd-toolbar-contents container"><a href="index.html" class="title">DexRx API Documentation - v2.3.0</a>
 <div id="tsd-toolbar-links"></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/>
 <ul role="listbox" id="tsd-search-results"></ul>
 <div id="tsd-search-status" aria-live="polite" aria-atomic="true">
@@ -7,7 +7,7 @@
 <div class="container container-main">
 <div class="col-content">
 <div class="tsd-page-title">
-<h1>DexRx API Documentation - v2.2.0</h1></div>
+<h1>DexRx API Documentation - v2.3.0</h1></div>
 <div class="tsd-panel tsd-typography"><h1 id="dexrx" class="tsd-anchor-link">DexRx<a href="#dexrx" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h1>
 <p><a href="https://github.com/legann/dexrx/actions/workflows/run-tests.yml"><img src="https://github.com/legann/dexrx/actions/workflows/run-tests.yml/badge.svg" alt="CI Status"></a>
 <a href="https://github.com/legann/dexrx/actions/workflows/generate-docs.yml"><img src="https://github.com/legann/dexrx/actions/workflows/generate-docs.yml/badge.svg" alt="Docs"></a>
@@ -24,6 +24,7 @@
 <li><a href="#modes">Modes</a></li>
 <li><a href="#parallel-execution">Parallel Execution</a></li>
 <li><a href="#node-types">Node Types</a></li>
+<li><a href="#control-channel">Control Channel</a></li>
 <li><a href="#engine-hooks">Engine Hooks</a></li>
 <li><a href="#quick-start">Quick Start</a></li>
 <li><a href="#license">License</a></li>
@@ -144,6 +145,16 @@
 <li>Transform or compute values based on inputs (transformation/computation logic is determined by node plugin)</li>
 <li>Automatically recalculate when input values change</li>
 </ul>
+<h2 id="control-channel" class="tsd-anchor-link">Control Channel<a href="#control-channel" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
+<p>A second channel between nodes: a controller declares <code>controls: [targetIds]</code> and pushes config deltas into its targets. Control links live outside <code>edges</code>; the data DAG stays acyclic. A delta lands in the target's control-slot and overlays the base config on the target's next compute.</p>
+<pre><code><span class="hl-1">ws</span><span class="hl-0"> ──► </span><span class="hl-1">filter</span><span class="hl-0"> ──► </span><span class="hl-1">controller</span><br/><span class="hl-0">        ▲             │</span><br/><span class="hl-0">        └── </span><span class="hl-1">control</span><span class="hl-0">-</span><span class="hl-3">slot</span><span class="hl-0"> (</span><span class="hl-1">push</span><span class="hl-0">, </span><span class="hl-1">non</span><span class="hl-0">-</span><span class="hl-1">triggering</span><span class="hl-0">)</span>
+</code><button>Copy</button></pre>
+
+<ul>
+<li><strong>Routing:</strong> an object payload goes to every declared target; <code>{ __targets: { id: delta } }</code> addresses targets individually. Slots merge per top-level key.</li>
+<li><strong>Triggering:</strong> <code>requestConfigUpdate(targetId, delta, { minIntervalMs })</code> rewrites the base config and recomputes immediately — the path for subscribe-time fields such as a live poller's interval.</li>
+<li><strong>Lifecycle:</strong> slots survive <code>exportState()</code>/<code>importState()</code> and are cleaned up on node removal.</li>
+</ul>
 <h2 id="engine-hooks" class="tsd-anchor-link">Engine Hooks<a href="#engine-hooks" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
 <p>DexRx provides an event hook system for monitoring graph lifecycle and node events. Subscribe to events using <code>on(eventType, handler)</code> method on <code>ExecutableGraph</code> instance.</p>
 <p><strong>Event Categories:</strong></p>
@@ -204,6 +215,7 @@
 <ul>
 <li><a href="#data-nodes"><span>Data <wbr/>Nodes</span></a></li>
 <li><a href="#operational-nodes"><span>Operational <wbr/>Nodes</span></a></li></ul></li>
+<li><a href="#control-channel"><span>Control <wbr/>Channel</span></a></li>
 <li><a href="#engine-hooks"><span>Engine <wbr/>Hooks</span></a></li>
 <li><a href="#quick-start"><span>Quick <wbr/>Start</span></a></li>
 <li>
@@ -213,7 +225,7 @@
 <li><a href="#long-running-graph-"><span>Long-<wbr/>running <wbr/>Graph ()</span></a></li></ul></li>
 <li><a href="#license"><span>License</span></a></li></ul></div></details></div>
 <div class="site-menu">
-<nav class="tsd-navigation"><a href="modules.html">DexRx API Documentation - v2.2.0</a>
+<nav class="tsd-navigation"><a href="modules.html">DexRx API Documentation - v2.3.0</a>
 <ul class="tsd-small-nested-navigation" id="tsd-nav-container">
 <li>Loading...</li></ul></nav></div></div></div><footer>
 <p class="tsd-generator">Generated using <a href="https://typedoc.org/" target="_blank">TypeDoc</a></p></footer>
