@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-08-29
+
+### Summary
+
+Per-plugin `debounceTime`. The engine-wide `debounceTime` is last-value-wins over its window — correct for value streams, but it silently drops all but the trailing emission within a window. A plugin whose input is a stream of events now declares `debounceTime = 0` to opt out per type. Plugins that set nothing keep the engine-wide value, so existing graphs are unchanged.
+
+### Added
+
+- `debounceTime?: number` on `INodePlugin` — per-type override of the engine-wide input-pipeline debounce. Applied at every subscription site, including `recreateNodeSubscription` (survives pause/resume). `undefined` inherits the engine value; `0` disables debouncing for that plugin's nodes.
+
+---
+
 ## [2.3.0] - 2026-08-28
 
 ### Summary

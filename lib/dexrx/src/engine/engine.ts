@@ -658,9 +658,11 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           mergeMap(values => Promise.all(values)) // Wait until all promises resolve
         );
 
-        // Apply optional debounce
-        if (this.options.debounceTime && this.options.debounceTime > 0) {
-          inputPipeline = inputPipeline.pipe(debounceTime(this.options.debounceTime));
+        // Apply optional debounce. A plugin may override the engine-wide value for its type;
+        // `0` disables it for event-consuming nodes, where last-value-wins would drop emissions.
+        const nodeDebounceTime = plugin.debounceTime ?? this.options.debounceTime;
+        if (nodeDebounceTime && nodeDebounceTime > 0) {
+          inputPipeline = inputPipeline.pipe(debounceTime(nodeDebounceTime));
         }
 
         // Apply optional throttle
@@ -905,8 +907,10 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
           mergeMap(values => Promise.all(values)) // Wait until all promises resolve
         );
 
-        if (this.options.debounceTime && this.options.debounceTime > 0) {
-          inputPipeline = inputPipeline.pipe(debounceTime(this.options.debounceTime));
+        // Plugin-level override, see addNode.
+        const nodeDebounceTime = plugin.debounceTime ?? this.options.debounceTime;
+        if (nodeDebounceTime && nodeDebounceTime > 0) {
+          inputPipeline = inputPipeline.pipe(debounceTime(nodeDebounceTime));
         }
 
         if (this.options.throttleTime && this.options.throttleTime > 0) {
@@ -2210,8 +2214,10 @@ export class ReactiveGraphEngine implements IReactiveGraphEngine {
       mergeMap(values => Promise.all(values)) // Wait until all promises resolve
     );
 
-    if (this.options.debounceTime && this.options.debounceTime > 0) {
-      inputPipeline = inputPipeline.pipe(debounceTime(this.options.debounceTime));
+    // Plugin-level override, see addNode.
+    const nodeDebounceTime = plugin.debounceTime ?? this.options.debounceTime;
+    if (nodeDebounceTime && nodeDebounceTime > 0) {
+      inputPipeline = inputPipeline.pipe(debounceTime(nodeDebounceTime));
     }
 
     if (this.options.throttleTime && this.options.throttleTime > 0) {

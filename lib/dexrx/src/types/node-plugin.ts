@@ -35,6 +35,17 @@ export interface INodePlugin<
    * - 'operational': Operational nodes process and transform data (have inputs)
    */
   readonly category: NodeCategory;
+  /**
+   * Per-type override of the engine's `debounceTime` for this plugin's INPUT pipeline.
+   * Absent (`undefined`) keeps the engine-wide `IEngineOptions.debounceTime`; `0` disables
+   * debouncing for every node of this type.
+   *
+   * Debounce is last-value-wins over its window, so it is a rate limiter for VALUE streams.
+   * A plugin whose inputs are EVENTS (each emission consumes an outcome that cannot be
+   * reconstructed from the next one) must declare `0`: within one window the engine would
+   * deliver only the trailing emission and silently drop the rest.
+   */
+  readonly debounceTime?: number;
   compute(config: TConfig, inputs: readonly TInput[]): Observable<TOutput> | TOutput;
 }
 

@@ -1,6 +1,10 @@
 export default {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // Resolve TS sources before any stray compiled .js: an editor or ad-hoc tsc can emit
+  // *.js next to *.ts in lib/dexrx/src, and the default order (js before ts) would shadow
+  // the source (the extensionless moduleNameMapper targets rely on this order).
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'mjs', 'cjs', 'json', 'node'],
   transform: {
     '^.+\\.tsx?$': [
       'ts-jest',
